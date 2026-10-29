@@ -1,5 +1,7 @@
 import { MathUtils } from 'three'
 import { create } from 'zustand'
+import type { ProbeReading } from '../physics/probe.ts'
+import type { Destination } from '../physics/trace.ts'
 
 /** Interstellar: disco simétrico, sem desvio de cor. Física real: Doppler e desvio gravitacional. */
 export type Mode = 'interstellar' | 'real'
@@ -28,6 +30,12 @@ function initialLang(): Lang {
   return navigator.language.toLowerCase().startsWith('pt') ? 'pt' : 'en'
 }
 
+/** Ponto da sonda de raio, em pixels CSS a partir do canto superior esquerdo do canvas. */
+export type ProbePoint = { x: number; y: number }
+
+/** O que o shader calculou no pixel da sonda (passada de verificação do ?debug). */
+export type GpuProbe = { destination: Destination; r: number; g: number; opacity: number }
+
 /** Resolução de renderização (dpr) e passos de integração por raio. */
 export type Quality = { dpr: number; steps: number }
 
@@ -45,6 +53,11 @@ type State = {
   setLang: (lang: Lang) => void
   mode: Mode
   setMode: (mode: Mode) => void
+  probe: ProbePoint | null
+  setProbe: (probe: ProbePoint | null) => void
+  probeReading: ProbeReading | null
+  probeGpu: GpuProbe | null
+  setProbeResult: (reading: ProbeReading, gpu: GpuProbe | null) => void
   quality: Quality
   setQuality: (quality: Quality) => void
   fps: number
@@ -65,6 +78,12 @@ export const useStore = create<State>()((set) => ({
   },
   mode: 'interstellar',
   setMode: (mode) => set({ mode }),
+  probe: null,
+  // Um ponto novo apaga a leitura anterior, para o painel não mostrar o raio velho.
+  setProbe: (probe) => set({ probe, probeReading: null, probeGpu: null }),
+  probeReading: null,
+  probeGpu: null,
+  setProbeResult: (probeReading, probeGpu) => set({ probeReading, probeGpu }),
   quality: initialQuality,
   setQuality: (quality) => set({ quality }),
   fps: 0,

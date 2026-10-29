@@ -137,13 +137,42 @@ test('um raio mirado no disco da frente para no disco', () => {
   assert.equal(film.crossings[0].tObserved, film.crossings[0].tEmitted)
 })
 
-test('um raio longe do buraco vai para o céu com desvio menor que o de uma passagem inteira', () => {
-  const cam = initialCamera()
-  const n = pixelDirection(cam, 1270, 700, 1281, 721) // canto superior direito
-  const res = traceRay(cam.position, n, { maxSteps: 300, realism: 1 })
-  assert.equal(res.destination, 'sky')
-  const b = impactParameter(cam.position, n)
-  assert.ok(angleBetween(n, res.finalDirection) < 2 / b)
+// Desvio exato (graus) de um raio que sai de r0 rumo ao centro com parâmetro
+// de impacto b > b_c, pela integral da órbita: dφ = du / sqrt(1/b² - u² + u³),
+// da câmera até o periastro e de lá até o infinito. Com u = u_p - w², a
+// integral fica sem a singularidade no periastro.
+function exactDeflection(r0: number, b: number) {
+  const G = (u: number) => 1 / (b * b) - u * u + u * u * u
+  const up = 1 / periapsis(b)!
+  const atPeriapsis = 2 / Math.sqrt(2 * up - 3 * up * up) // limite de 2w / sqrt(G) quando w → 0
+  const integral = (ua: number) => {
+    const W = Math.sqrt(up - ua)
+    const N = 20000 // Simpson
+    let s = 0
+    for (let i = 0; i <= N; i++) {
+      const w = (W * i) / N
+      const f = i === 0 ? atPeriapsis : (2 * w) / Math.sqrt(Math.max(G(up - w * w), 1e-300))
+      s += f * (i === 0 || i === N ? 1 : i % 2 ? 4 : 2)
+    }
+    return (s * W) / N / 3
+  }
+  const phiInfinity = integral(1 / r0) + integral(0)
+  // Câmera em (r0, 0); a direção vista sai rumo ao centro, inclinada para +y.
+  const sinA = (b * Math.sqrt(1 - 1 / r0)) / r0
+  const n: Vec3 = [-Math.sqrt(1 - sinA * sinA), sinA, 0]
+  return { n, deflection: deg(angleBetween(n, [Math.cos(phiInfinity), Math.sin(phiInfinity), 0])) }
+}
+
+test('o desvio do raio traçado bate com a integral exata da órbita (diferença < 0,1°)', () => {
+  const r0 = 22
+  for (const b of [3, 5, 10, 15]) {
+    const { n, deflection } = exactDeflection(r0, b)
+    const res = traceRay([r0, 0, 0], n, { maxSteps: 300, realism: 0, disk: false })
+    assert.equal(res.destination, 'sky')
+    const traced = deg(angleBetween(n, res.finalDirection))
+    // O traçado para em r = 60; o pouco que a luz ainda curvaria dali ao infinito entra na tolerância.
+    assert.ok(Math.abs(traced - deflection) < 0.1, `b = ${b}: traçado ${traced.toFixed(3)}°, exato ${deflection.toFixed(3)}°`)
+  }
 })
 
 test('o shader usa as constantes compartilhadas e não redefine nenhuma', () => {

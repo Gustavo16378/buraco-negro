@@ -6,11 +6,14 @@ import { useT } from './i18n/index.ts'
 import { BlackHole } from './scene/BlackHole.tsx'
 import { CameraRig } from './scene/CameraRig.tsx'
 import { Effects } from './scene/Effects.tsx'
+import { ProbeTracer } from './scene/ProbeTracer.tsx'
 import { Quality } from './scene/Quality.tsx'
 import { useStore } from './state/store.ts'
 import { DebugPanel } from './ui/DebugPanel.tsx'
 import { LangToggle } from './ui/LangToggle.tsx'
 import { ModeToggle } from './ui/ModeToggle.tsx'
+import { ProbeMarker } from './ui/ProbeMarker.tsx'
+import { ProbePanel } from './ui/ProbePanel.tsx'
 
 // Posição final da chegada (SPEC 1): ~22 r_s, ~8° acima do plano do disco.
 const CAM_DIST = 22
@@ -56,9 +59,12 @@ export default function App() {
         <CameraRig />
         <Effects />
         <Quality />
+        <ProbeTracer />
       </Canvas>
+      <ProbeMarker />
       <ModeToggle />
       <LangToggle />
+      <ProbePanel />
       {DEBUG && <DebugPanel />}
     </div>
   )

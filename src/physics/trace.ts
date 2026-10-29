@@ -63,13 +63,13 @@ export type TraceResult = {
   crossings: Crossing[]
   /** Opacidade acumulada do disco na frente do destino. */
   opacity: number
-  /** Menor distância ao centro entre os pontos do caminho até a parada. */
+  /** Menor distância ao centro entre os pontos do caminho até a parada (no disco, até o ponto do disco). */
   minR: number
   /** Direção do raio na parada; no céu, é de onde a luz vem. */
   finalDirection: Vec3
   /** Passos até a parada. */
   steps: number
-  /** Posições: a câmera e o fim de cada passo. */
+  /** Posições: a câmera, o fim de cada passo e, se o raio parou no disco, o ponto do disco. */
   path: Vec3[]
   /** Índice em path onde o shader para. */
   stopIndex: number
@@ -160,6 +160,7 @@ export function traceRay(origin: Vec3, n: Vec3, options: TraceOptions): TraceRes
     ;[x, v] = rk4(x, v, h2, Math.min(Math.max(DT_FACTOR * r, MIN_DT), MAX_DT))
     path.push(x)
     if (stop) continue // depois da parada: só segue o caminho
+    const minBefore = minR
     minR = Math.min(minR, length(x))
 
     if (diskOn && prev[1] > 0 !== x[1] > 0) {
@@ -175,8 +176,12 @@ export function traceRay(origin: Vec3, n: Vec3, options: TraceOptions): TraceRes
         crossings.push({ point: p, r: rp, direction, alpha, gPhysical, gApplied, tEmitted, tObserved: gApplied * tEmitted })
         opacity += (1 - opacity) * alpha
         if (opacity > OPACITY_STOP) {
+          // O raio para no ponto do disco, não no fim do passo (que já passou
+          // do disco): o caminho termina em p e a menor distância conta só até ali.
           stoppedAtDisk = true
-          stop = { index: path.length - 1, steps: i + 1, direction: normalize(v) }
+          minR = Math.min(minBefore, rp)
+          path.splice(path.length - 1, 0, p)
+          stop = { index: path.length - 2, steps: i + 1, direction }
           if (!options.continueAfterStop) break
         }
       }

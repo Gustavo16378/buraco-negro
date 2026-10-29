@@ -1,11 +1,23 @@
 import { useFrame } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
-import { FloatType, GLSL3, HalfFloatType, MathUtils, Matrix4, Mesh, PerspectiveCamera, ShaderMaterial, Vector3 } from 'three'
+import {
+  FloatType,
+  GLSL3,
+  HalfFloatType,
+  MathUtils,
+  Matrix4,
+  Mesh,
+  PerspectiveCamera,
+  ShaderMaterial,
+  Vector2,
+  Vector3,
+} from 'three'
 import { DEBUG } from '../debug.ts'
 import { DISK_IN, DISK_OUT, DISK_TEMP, shaderDefines, TIME_SCALE } from '../physics/constants.ts'
 import fragmentShader from '../shaders/blackhole.frag.glsl?raw'
 import vertexShader from '../shaders/fullscreen.vert.glsl?raw'
 import { useStore } from '../state/store.ts'
+import { sceneShared } from './shared.ts'
 import { measureShadow } from './shadowProbe.ts'
 
 // Maior intervalo entre quadros que a animação aceita, em segundos. Depois de
@@ -37,6 +49,8 @@ export function BlackHole() {
       uTemp: { value: DISK_TEMP },
       uTime: { value: 0 },
       uRealismo: { value: 0 },
+      uProbe: { value: 0 },
+      uProbeUv: { value: new Vector2() },
     }),
     [],
   )
@@ -77,6 +91,13 @@ export function BlackHole() {
   // Com o pós-processamento, esse desenho vai para a render target de entrada
   // do compositor (ponto flutuante, antes do bloom e do tone mapping), que é
   // o que fica ligado no onAfterRender.
+  useEffect(() => {
+    sceneShared.material = material.current
+    return () => {
+      sceneShared.material = null
+    }
+  }, [])
+
   useEffect(() => {
     const m = mesh.current
     if (!DEBUG || !m) return

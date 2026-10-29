@@ -14,6 +14,8 @@ uniform float uDiskOut;  // raio externo do disco
 uniform float uTemp;     // temperatura de pico do disco, em kelvin
 uniform float uTime;     // tempo da simulação, em unidades de r_s / c
 uniform float uRealismo; // 0 = modo Interstellar (sem desvio de frequência), 1 = Física real
+uniform float uProbe;    // 1 só na passada de verificação da sonda de raio (?debug)
+uniform vec2 uProbeUv;   // pixel da sonda, em coordenadas de tela de -1 a 1 (como vUv)
 
 in vec2 vUv;
 out vec4 fragColor;
@@ -395,8 +397,8 @@ float frequencyShift(vec3 p, float r, vec3 rayDir) {
 
 // Uma amostra do disco no ponto p do plano, à distância r do centro, vista
 // por um raio com direção rayDir. Devolve a emissão (rgb, linear) e a
-// opacidade (a).
-vec4 diskSample(vec3 p, float r, vec3 rayDir) {
+// opacidade (a); em g, o desvio de frequência aplicado.
+vec4 diskSample(vec3 p, float r, vec3 rayDir, out float g) {
   // O gás gira no sentido de φ crescente com a velocidade angular kepleriana
   // Ω = sqrt(M / r³), M = 0,5. O centro gira mais rápido que a borda, então o
   // ruído se estica em faixas finas.
@@ -426,7 +428,7 @@ vec4 diskSample(vec3 p, float r, vec3 rayDir) {
 
   // Desvio de frequência: no modo Interstellar g = 1 (como no filme); no
   // Física real entra o valor calculado. uRealismo anima a troca.
-  float g = mix(1.0, frequencyShift(p, r, rayDir), uRealismo);
+  g = mix(1.0, frequencyShift(p, r, rayDir), uRealismo);
 
   // Emissão de corpo negro na temperatura observada T_obs = g · T. O brilho é
   // proporcional a T_obs⁴ (lei de Stefan-Boltzmann), relativo ao pico, o que
@@ -488,8 +490,10 @@ vec3 observerToRay(vec3 n, vec3 x) {
 }
 
 void main() {
+  // Na passada de verificação da sonda, o pixel calculado é o da sonda.
+  vec2 uv = uProbe > 0.5 ? uProbeUv : vUv;
   vec3 x = uCamPos;
-  vec3 v = observerToRay(rayDirection(vUv), x);
+  vec3 v = observerToRay(rayDirection(uv), x);
   vec3 L = cross(x, v);
   float h2 = dot(L, L);
 
@@ -497,6 +501,9 @@ void main() {
   // cena) e opacidade acumulada.
   vec3 disk = vec3(0.0);
   float opacity = 0.0;
+  // r e g do primeiro cruzamento com o disco (para a sonda).
+  float firstR = 0.0;
+  float firstG = 0.0;
 
   bool captured = false;
   for (int i = 0; i < MAX_LOOP_STEPS; i++) {
@@ -519,7 +526,12 @@ void main() {
       vec3 p = mix(prev, x, f);
       float rp = length(p);
       if (rp > uDiskIn && rp < uDiskOut) {
-        vec4 s = diskSample(p, rp, normalize(mix(prevV, v, f)));
+        float g;
+        vec4 s = diskSample(p, rp, normalize(mix(prevV, v, f)), g);
+        if (firstR == 0.0) {
+          firstR = rp;
+          firstG = g;
+        }
         disk += (1.0 - opacity) * s.a * s.rgb;
         opacity += (1.0 - opacity) * s.a;
         // O que está atrás já não aparece. No modo de depuração o raio segue
@@ -530,6 +542,16 @@ void main() {
     }
   }
   if (length(x) < 1.0) captured = true;
+
+  // Passada de verificação da sonda (?debug): em vez de cor, devolve o
+  // destino (0 céu, 1 horizonte, 2 disco, com a mesma regra da CPU), o r e o
+  // g do primeiro cruzamento com o disco e a opacidade acumulada. uProbe é
+  // igual em todos os pixels, então sair aqui não quebra as derivadas do céu.
+  if (uProbe > 0.5) {
+    float destination = opacity > OPACITY_STOP ? 2.0 : (captured ? 1.0 : 0.0);
+    fragColor = vec4(destination, firstR, firstG, opacity);
+    return;
+  }
 
   // O céu usa derivadas de tela, que só valem em fluxo uniforme: por isso ele
   // é chamado para todo pixel, depois do laço e fora de qualquer if, mesmo nos
