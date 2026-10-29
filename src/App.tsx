@@ -1,7 +1,9 @@
 import { Canvas } from '@react-three/fiber'
 import { MathUtils } from 'three'
+import { DEBUG } from './debug.ts'
 import { BlackHole } from './scene/BlackHole.tsx'
 import { CameraRig } from './scene/CameraRig.tsx'
+import { DebugPanel } from './ui/DebugPanel.tsx'
 
 // Posição final da chegada (SPEC 1): ~22 r_s, ~8° acima do plano do disco.
 const CAM_DIST = 22
@@ -23,6 +25,7 @@ export default function App() {
         <BlackHole />
         <CameraRig />
       </Canvas>
+      {DEBUG && <DebugPanel />}
     </div>
   )
 }

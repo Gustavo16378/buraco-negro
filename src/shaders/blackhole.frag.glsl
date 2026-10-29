@@ -1,16 +1,23 @@
-// Etapa 1: raios em linha reta (ainda sem gravidade), céu de estrelas
-// procedurais e uma esfera preta de raio 1 no lugar do horizonte.
+// Buraco negro de Schwarzschild (sem rotação), unidades geométricas com
+// r_s = 1. Cada pixel lança um raio da câmera para trás no tempo, integra a
+// trajetória curvada pela gravidade e, se ele escapar, amostra o céu na
+// direção final.
 
 uniform vec3 uCamPos;    // posição da câmera, em r_s
 uniform mat4 uCamMatrix; // matrixWorld da câmera
 uniform float uFov;      // campo de visão vertical, em radianos
 uniform float uAspect;   // largura / altura
+uniform int uMaxSteps;   // limite de passos da integração por raio
+uniform float uDebug;    // 1 com ?debug na URL: alfa 0 nos pixels da sombra, para medir
 
 in vec2 vUv;
 out vec4 fragColor;
 
 const float PI = 3.14159265359;
 const float INV_UINT_MAX = 1.0 / 4294967295.0;
+
+const float ESCAPE_R = 60.0;  // além disso, saindo, o raio já não curva de forma visível
+const int MAX_STEPS = 1000;   // teto fixo do laço; o limite real é uMaxSteps
 
 vec3 rayDirection(vec2 uv) {
   float t = tan(uFov * 0.5);
@@ -21,8 +28,8 @@ vec3 rayDirection(vec2 uv) {
 // Céu procedural
 //
 // Tudo aqui é função só da direção `d` do raio (o tamanho do pixel entra só
-// para suavizar). Girar a câmera não faz nada "nadar", e a Etapa 2 entorta o
-// céu inteiro só mudando a direção final do raio.
+// para suavizar). Girar a câmera não faz nada "nadar", e a lente gravitacional
+// entorta o céu inteiro só mudando a direção final do raio.
 // ---------------------------------------------------------------------------
 
 // Hash inteiro PCG3D (Jarzynski e Olano, 2020).
@@ -296,25 +303,83 @@ vec3 sky(vec3 d, Pixel P) {
 }
 
 // ---------------------------------------------------------------------------
+// Traçado dos raios
+//
+// A posição x é tratada como um ponto num espaço euclidiano auxiliar, com
+// |x| = r (a coordenada radial de Schwarzschild). O parâmetro da integração
+// não é o tempo: só o formato da órbita e a direção final importam.
+// ---------------------------------------------------------------------------
+
+// Aceleração do raio. Com h2 = |x × v|² constante (momento angular), essa
+// forma reproduz exatamente a trajetória da luz na métrica de Schwarzschild:
+// escrita em u = 1/r e no ângulo φ do plano da órbita, ela vira a equação de
+// Binet para fótons, d²u/dφ² + u = 1,5 · r_s · u². É a mesma usada em
+// traçadores de referência.
+vec3 accel(vec3 x, float h2) {
+  float r2 = dot(x, x);
+  return -1.5 * h2 * x / (r2 * r2 * sqrt(r2));
+}
+
+// Um passo de Runge-Kutta de 4ª ordem sobre (x, v).
+void rk4(inout vec3 x, inout vec3 v, float h2, float dt) {
+  vec3 k1x = v;
+  vec3 k1v = accel(x, h2);
+  vec3 k2x = v + 0.5 * dt * k1v;
+  vec3 k2v = accel(x + 0.5 * dt * k1x, h2);
+  vec3 k3x = v + 0.5 * dt * k2v;
+  vec3 k3v = accel(x + 0.5 * dt * k2x, h2);
+  vec3 k4x = v + dt * k3v;
+  vec3 k4v = accel(x + dt * k3x, h2);
+  x += dt / 6.0 * (k1x + 2.0 * k2x + 2.0 * k3x + k4x);
+  v += dt / 6.0 * (k1v + 2.0 * k2v + 2.0 * k3v + k4v);
+}
+
+// Converte a direção `n` que a câmera vê (referencial local de um observador
+// parado na posição x) para a direção inicial do raio no espaço da integração.
+// Na métrica de Schwarzschild, o observador parado mede o comprimento radial
+// como dr / sqrt(1 - 1/r), e o tangencial como r·dφ. Então uma direção com
+// componentes locais (radial n_r, tangencial n_t) corresponde, nas
+// coordenadas, a (sqrt(1 - 1/r) · n_r, n_t). O raio sai com o parâmetro de
+// impacto b = r · sen(α) / sqrt(1 - 1/r), que é a relação usada no critério
+// de tamanho da sombra (SPEC 9). Sem essa conversão a sombra sairia 2,6% maior
+// a 20 r_s e 8,4% maior a 6 r_s.
+// Aproximação: a câmera é tratada como parada em cada posição; a aberração
+// causada pelo movimento dela ao orbitar é ignorada.
+vec3 observerToRay(vec3 n, vec3 x) {
+  vec3 rhat = normalize(x);
+  float nr = dot(n, rhat);
+  return normalize(n + (sqrt(1.0 - 1.0 / length(x)) - 1.0) * nr * rhat);
+}
 
 void main() {
-  vec3 ro = uCamPos;
-  vec3 rd = rayDirection(vUv);
+  vec3 x = uCamPos;
+  vec3 v = observerToRay(rayDirection(vUv), x);
+  vec3 L = cross(x, v);
+  float h2 = dot(L, L);
 
-  // O céu usa derivadas de tela, que só valem em fluxo uniforme: por isso
-  // ele é calculado aqui para todo pixel, fora de qualquer if ou laço.
-  vec3 col = sky(rd, pixelFootprint(rd));
+  bool captured = false;
+  for (int i = 0; i < MAX_STEPS; i++) {
+    if (i >= uMaxSteps) break;                       // passos acabaram: trata como escapou
+    float r = length(x);
+    if (r < 1.0) { captured = true; break; }         // caiu no horizonte
+    if (r > ESCAPE_R && dot(x, v) > 0.0) break;      // escapou
+    // Passo adaptativo: menor perto do buraco, onde a curvatura é forte.
+    rk4(x, v, h2, clamp(0.08 * r, 0.02, 1.5));
+  }
+  if (length(x) < 1.0) captured = true;
 
-  // Esfera preta de raio 1 (horizonte), com o raio seguindo em linha reta.
-  // `impact` é a menor distância entre a reta do raio e o centro: abaixo de 1,
-  // o raio acerta a esfera. A borda é suavizada em ~1 pixel.
-  float b = dot(ro, rd);
-  float impact = length(ro - b * rd);
-  float cover = clamp((1.0 - impact) / max(fwidth(impact), 1e-6) + 0.5, 0.0, 1.0);
-  if (b > 0.0) cover = 0.0; // centro atrás da câmera: a reta passa perto, mas o raio não volta
-  col *= 1.0 - cover;
+  // O céu usa derivadas de tela, que só valem em fluxo uniforme: por isso ele
+  // é calculado para todo pixel, depois do laço e fora de qualquer if, mesmo
+  // nos que caíram no buraco.
+  vec3 dir = normalize(v);
+  vec3 col = sky(dir, pixelFootprint(dir));
+  if (captured) col = vec3(0.0);
+
+  // No modo de depuração a sombra sai com alfa 0 (a página é preta, então não
+  // muda nada na tela): é assim que o JS mede o raio dela com readPixels.
+  float alpha = (uDebug > 0.5 && captured) ? 0.0 : 1.0;
 
   // O shader trabalha em cor linear (HDR). Aqui só converte para o espaço de
   // cor da tela; o tone mapping fica para o pós-processamento.
-  fragColor = linearToOutputTexel(vec4(col, 1.0));
+  fragColor = linearToOutputTexel(vec4(col, alpha));
 }

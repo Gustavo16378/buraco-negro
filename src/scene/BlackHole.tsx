@@ -1,11 +1,21 @@
 import { useFrame } from '@react-three/fiber'
-import { useMemo, useRef } from 'react'
-import { GLSL3, MathUtils, Matrix4, PerspectiveCamera, ShaderMaterial, Vector3 } from 'three'
+import { useEffect, useMemo, useRef } from 'react'
+import { GLSL3, MathUtils, Matrix4, Mesh, PerspectiveCamera, ShaderMaterial, Vector3 } from 'three'
+import { DEBUG } from '../debug.ts'
 import fragmentShader from '../shaders/blackhole.frag.glsl?raw'
 import vertexShader from '../shaders/fullscreen.vert.glsl?raw'
+import { useStore } from '../state/store.ts'
+import { measureShadow } from './shadowProbe.ts'
+
+// Passos de integração por raio (SPEC: 300 no desktop).
+const MAX_STEPS = 300
+// No modo de depuração, mede a sombra a cada tantos quadros (readPixels trava a GPU).
+const MEASURE_EVERY = 20
 
 export function BlackHole() {
+  const mesh = useRef<Mesh>(null)
   const material = useRef<ShaderMaterial>(null)
+  const setShadow = useStore((s) => s.setShadow)
 
   const uniforms = useMemo(
     () => ({
@@ -13,6 +23,8 @@ export function BlackHole() {
       uCamMatrix: { value: new Matrix4() },
       uFov: { value: 1 },
       uAspect: { value: 1 },
+      uMaxSteps: { value: MAX_STEPS },
+      uDebug: { value: DEBUG ? 1 : 0 },
     }),
     [],
   )
@@ -32,8 +44,24 @@ export function BlackHole() {
     }
   })
 
+  // A medida precisa ler o framebuffer logo depois do desenho, antes de o
+  // navegador apresentar o quadro, por isso fica no onAfterRender do quad.
+  useEffect(() => {
+    const m = mesh.current
+    if (!DEBUG || !m) return
+    let frame = 0
+    m.onAfterRender = (renderer, _scene, camera) => {
+      if (frame++ % MEASURE_EVERY !== 0 || !(camera instanceof PerspectiveCamera)) return
+      const result = measureShadow(renderer.getContext() as WebGL2RenderingContext, camera, renderer.domElement.clientHeight)
+      if (result) setShadow(result)
+    }
+    return () => {
+      m.onAfterRender = () => {}
+    }
+  }, [setShadow])
+
   return (
-    <mesh frustumCulled={false}>
+    <mesh ref={mesh} frustumCulled={false}>
       <planeGeometry args={[2, 2]} />
       <shaderMaterial
         ref={material}
