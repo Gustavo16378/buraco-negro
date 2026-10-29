@@ -1,5 +1,5 @@
 import { MathUtils, type PerspectiveCamera } from 'three'
-import { shadowAngle } from '../physics.ts'
+import { shadowAngle } from '../physics/observables.ts'
 import type { ShadowMeasure } from '../state/store.ts'
 
 // Linhas e colunas lidas em volta do centro. Cada uma dá uma estimativa do

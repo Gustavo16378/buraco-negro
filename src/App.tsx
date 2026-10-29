@@ -1,13 +1,15 @@
 import { Canvas } from '@react-three/fiber'
-import { useSyncExternalStore } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import { MathUtils } from 'three'
 import { DEBUG } from './debug.ts'
+import { useT } from './i18n/index.ts'
 import { BlackHole } from './scene/BlackHole.tsx'
 import { CameraRig } from './scene/CameraRig.tsx'
 import { Effects } from './scene/Effects.tsx'
 import { Quality } from './scene/Quality.tsx'
 import { useStore } from './state/store.ts'
 import { DebugPanel } from './ui/DebugPanel.tsx'
+import { LangToggle } from './ui/LangToggle.tsx'
 import { ModeToggle } from './ui/ModeToggle.tsx'
 
 // Posição final da chegada (SPEC 1): ~22 r_s, ~8° acima do plano do disco.
@@ -22,9 +24,17 @@ function subscribeVisibility(onChange: () => void) {
 const isPageVisible = () => document.visibilityState === 'visible'
 
 export default function App() {
+  const t = useT()
   const dpr = useStore((s) => s.quality.dpr)
   // Aba oculta: para de renderizar (SPEC 6).
   const visible = useSyncExternalStore(subscribeVisibility, isPageVisible)
+
+  // Idioma da página e título da aba acompanham a escolha (leitores de tela
+  // usam o lang para escolher a pronúncia).
+  useEffect(() => {
+    document.documentElement.lang = t.locale
+    document.title = t.title
+  }, [t])
 
   return (
     <div className="fixed inset-0 bg-black">
@@ -48,6 +58,7 @@ export default function App() {
         <Quality />
       </Canvas>
       <ModeToggle />
+      <LangToggle />
       {DEBUG && <DebugPanel />}
     </div>
   )

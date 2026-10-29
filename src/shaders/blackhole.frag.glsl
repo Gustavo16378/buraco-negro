@@ -21,13 +21,9 @@ out vec4 fragColor;
 const float PI = 3.14159265359;
 const float INV_UINT_MAX = 1.0 / 4294967295.0;
 
-const float ESCAPE_R = 60.0;  // além disso, saindo, o raio já não curva de forma visível
-const int MAX_STEPS = 1000;   // teto fixo do laço; o limite real é uMaxSteps
-// Teto do passo. Com o teto antigo de 1,5, os raios a caminho do céu andavam
-// devagar demais onde a gravidade já é fraca. Com 5 (só atingido além de
-// r ≈ 62), são 18% menos passos na vista inicial; a borda da sombra não muda
-// e a direção final muda menos de 5 segundos de arco (testado na CPU).
-const float MAX_DT = 5.0;
+// ESCAPE_R, DT_FACTOR, MIN_DT, MAX_DT, MAX_LOOP_STEPS, OPACITY_STOP,
+// DISK_FADE_IN, DISK_FADE_OUT e T_PROFILE_PEAK chegam como #define, vindos de
+// src/physics/constants.ts: são as mesmas que o integrador na CPU usa.
 
 vec3 rayDirection(vec2 uv) {
   float t = tan(uFov * 0.5);
@@ -338,9 +334,6 @@ vec3 sky(vec3 d, Pixel P, float weight) {
 // propósito: o tone mapping do pós-processamento comprime depois.
 const float DISK_EMISSION = 1.6;
 
-// Máximo de f(x) = x^-3/4 · (1 - x^-1/2)^1/4, que acontece em x = 49/36.
-const float T_PROFILE_PEAK = 0.487871;
-
 // Perfil de temperatura de disco fino (SPEC): zero na borda interna e pico
 // logo depois, em r = uDiskIn · 49/36 (~4,08). Dividido pelo máximo do perfil
 // para o pico ficar exatamente em uTemp.
@@ -429,7 +422,7 @@ vec4 diskSample(vec3 p, float r, vec3 rayDir) {
   // é opaco, como pede o modelo de disco fino que emite como corpo negro
   // (opticamente espesso): o ruído muda só o brilho, e a transparência fica
   // nas bordas, onde a densidade cai.
-  float alpha = smoothstep(uDiskIn, uDiskIn + 0.4, r) * (1.0 - smoothstep(uDiskOut - 2.0, uDiskOut, r));
+  float alpha = smoothstep(uDiskIn, uDiskIn + DISK_FADE_IN, r) * (1.0 - smoothstep(uDiskOut - DISK_FADE_OUT, uDiskOut, r));
 
   // Desvio de frequência: no modo Interstellar g = 1 (como no filme); no
   // Física real entra o valor calculado. uRealismo anima a troca.
@@ -506,7 +499,7 @@ void main() {
   float opacity = 0.0;
 
   bool captured = false;
-  for (int i = 0; i < MAX_STEPS; i++) {
+  for (int i = 0; i < MAX_LOOP_STEPS; i++) {
     if (i >= uMaxSteps) break;                       // passos acabaram: trata como escapou
     float r = length(x);
     if (r < 1.0) { captured = true; break; }         // caiu no horizonte
@@ -514,7 +507,7 @@ void main() {
     vec3 prev = x;
     vec3 prevV = v;
     // Passo adaptativo: menor perto do buraco, onde a curvatura é forte.
-    rk4(x, v, h2, clamp(0.08 * r, 0.02, MAX_DT));
+    rk4(x, v, h2, clamp(DT_FACTOR * r, MIN_DT, MAX_DT));
 
     // Cruzou o plano do disco? O raio pode cruzar várias vezes: é isso que
     // mostra a parte de trás do disco por cima e por baixo da sombra, e as
@@ -532,7 +525,7 @@ void main() {
         // O que está atrás já não aparece. No modo de depuração o raio segue
         // mesmo assim, para saber se ele cai no horizonte e medir a sombra
         // inteira, inclusive a parte escondida atrás do disco.
-        if (opacity > 0.99 && uDebug < 0.5) break;
+        if (opacity > OPACITY_STOP && uDebug < 0.5) break;
       }
     }
   }

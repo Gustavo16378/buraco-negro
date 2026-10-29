@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "test": "node --experimental-strip-types --disable-warning=ExperimentalWarning --test src/physics/trace.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -2,14 +2,12 @@ import { useFrame } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
 import { FloatType, GLSL3, HalfFloatType, MathUtils, Matrix4, Mesh, PerspectiveCamera, ShaderMaterial, Vector3 } from 'three'
 import { DEBUG } from '../debug.ts'
+import { DISK_IN, DISK_OUT, DISK_TEMP, shaderDefines, TIME_SCALE } from '../physics/constants.ts'
 import fragmentShader from '../shaders/blackhole.frag.glsl?raw'
 import vertexShader from '../shaders/fullscreen.vert.glsl?raw'
 import { useStore } from '../state/store.ts'
 import { measureShadow } from './shadowProbe.ts'
 
-// Tempo da simulação, em unidades de r_s / c, por segundo real. Com 4, o gás
-// na borda interna (r = 3) dá uma volta em ~12 s e na borda externa em ~90 s.
-const TIME_SCALE = 4
 // Maior intervalo entre quadros que a animação aceita, em segundos. Depois de
 // a aba ficar oculta, o primeiro quadro traz um intervalo enorme; sem esse
 // limite o disco e a troca de modo dariam um salto.
@@ -34,13 +32,9 @@ export function BlackHole() {
       uAspect: { value: 1 },
       uMaxSteps: { value: useStore.getState().quality.steps },
       uDebug: { value: DEBUG ? 1 : 0 },
-      uDiskIn: { value: 3 },
-      uDiskOut: { value: 12 },
-      // Temperatura de pico do disco. O SPEC parte de ~7000 K, mas esse branco
-      // levemente azulado, depois do ACES (que tira saturação dos brilhos
-      // fortes), deixava o disco cinza-prateado. 4800 K dá o branco quente no
-      // centro e o dourado nas bordas do filme.
-      uTemp: { value: 4800 },
+      uDiskIn: { value: DISK_IN },
+      uDiskOut: { value: DISK_OUT },
+      uTemp: { value: DISK_TEMP },
       uTime: { value: 0 },
       uRealismo: { value: 0 },
     }),
@@ -112,6 +106,7 @@ export function BlackHole() {
       <shaderMaterial
         ref={material}
         glslVersion={GLSL3}
+        defines={shaderDefines}
         vertexShader={vertexShader}
         fragmentShader={fragmentShader}
         uniforms={uniforms}
