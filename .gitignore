@@ -1,0 +1,28 @@
+# Dependências e build
+node_modules
+dist
+dist-ssr
+*.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Editor e sistema
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+Thumbs.db
+
+# Ambiente
+.env*
+
+# Arquivos do kit (não versionar)
+CLAUDE.md
+SPEC.md
+PLAN.md
+PROMPT.md
+ENTENDA.md
+referencias/
