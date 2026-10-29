@@ -23,6 +23,11 @@ const float INV_UINT_MAX = 1.0 / 4294967295.0;
 
 const float ESCAPE_R = 60.0;  // além disso, saindo, o raio já não curva de forma visível
 const int MAX_STEPS = 1000;   // teto fixo do laço; o limite real é uMaxSteps
+// Teto do passo. Com o teto antigo de 1,5, os raios a caminho do céu andavam
+// devagar demais onde a gravidade já é fraca. Com 5 (só atingido além de
+// r ≈ 62), são 18% menos passos na vista inicial; a borda da sombra não muda
+// e a direção final muda menos de 5 segundos de arco (testado na CPU).
+const float MAX_DT = 5.0;
 
 vec3 rayDirection(vec2 uv) {
   float t = tan(uFov * 0.5);
@@ -271,13 +276,25 @@ vec3 starLayer(vec3 d, Pixel P, Stars L) {
 }
 
 // Usa derivadas de tela (via density): só pode ser chamada fora de if e de laço.
-vec3 sky(vec3 d, Pixel P) {
-  Galaxy g = milkyWay(d);
+// `weight` é quanto do céu aparece no pixel (0 na sombra e atrás do disco
+// opaco). Onde ele não aparece, os ruídos da Via Láctea são pulados e as
+// densidades de estrelas viram zero, o que faz cada camada sair logo no
+// começo de starLayer.
+// Cuidado: nenhuma camada de estrelas pode ficar dentro de um if. As derivadas
+// de density() só são usadas dentro de starLayer, e o compilador do shader
+// pode mover o cálculo delas para dentro do if; ali os quatro pixels de cada
+// bloco 2x2 não rodam juntos e a derivada sai inválida (NaN), que o bloom
+// espalha pela tela inteira. Chamando starLayer sempre, a condição de saída
+// dela consome as derivadas antes de qualquer desvio.
+vec3 sky(vec3 d, Pixel P, float weight) {
+  float shown = weight > 0.002 ? 1.0 : 0.0;
+  Galaxy g = Galaxy(vec3(0.0), vec3(1.0), 0.0, 0.0, 1.0);
+  if (shown > 0.0) g = milkyWay(d);
   vec3 col = g.glow;
 
   // Ruído de baixa frequência na densidade: regiões do céu mais cheias e
   // outras quase vazias (de 0,15x a 1,7x a densidade média).
-  float clump = mix(0.15, 1.7, smoothstep(0.3, 0.7, fbm(d * 2.2 + 31.7, 2)));
+  float clump = shown > 0.0 ? mix(0.15, 1.7, smoothstep(0.3, 0.7, fbm(d * 2.2 + 31.7, 2))) : 0.0;
 
   // A poeira esconde estrelas (reduz a chance de existirem) em vez de
   // escurecê-las. Junto com o brilho mínimo de cada camada, isso garante que
@@ -288,7 +305,6 @@ vec3 sky(vec3 d, Pixel P) {
   // nuvens, que fazem a faixa parecer feita de estrelas. A densidade cai com
   // band², então elas somem antes de chegar ao fundo preto.
   vec3 grain = density(0.9 * g.band * g.band * mix(0.25, 1.0, g.clouds) * g.transmission);
-  col += g.tint * starLayer(d, P, Stars(300.0, grain, 2.0, vec2(0.04, 0.16), vec2(0.7, 0.7), vec2(0.0), 4u));
 
   // Estrelas visíveis uma a uma. Do mais discreto ao mais forte: muitas
   // pequenas, poucas grandes com halo. O pico mínimo (~0,22) continua bem
@@ -297,7 +313,9 @@ vec3 sky(vec3 d, Pixel P) {
   vec3 small  = density(0.14 * open);
   vec3 medium = density(min(0.36 * open * (1.0 + g.band), 0.85));
   vec3 large  = density(0.35 * open);
-  vec3 huge   = density(0.25 * g.transmission);
+  vec3 huge   = density(shown * 0.25 * g.transmission);
+
+  col += g.tint * starLayer(d, P, Stars(300.0, grain, 2.0, vec2(0.04, 0.16), vec2(0.7, 0.7), vec2(0.0), 4u));
   col += starLayer(d, P, Stars(160.0, inBand, 3.0, vec2(0.30, 0.80), vec2(0.70, 0.90), vec2(0.0),       0u));
   col += starLayer(d, P, Stars(120.0, small,  2.0, vec2(0.22, 0.35), vec2(0.70, 0.75), vec2(0.0),       5u));
   col += starLayer(d, P, Stars( 70.0, medium, 3.0, vec2(0.30, 0.90), vec2(0.70, 1.00), vec2(0.0),       1u));
@@ -496,7 +514,7 @@ void main() {
     vec3 prev = x;
     vec3 prevV = v;
     // Passo adaptativo: menor perto do buraco, onde a curvatura é forte.
-    rk4(x, v, h2, clamp(0.08 * r, 0.02, 1.5));
+    rk4(x, v, h2, clamp(0.08 * r, 0.02, MAX_DT));
 
     // Cruzou o plano do disco? O raio pode cruzar várias vezes: é isso que
     // mostra a parte de trás do disco por cima e por baixo da sombra, e as
@@ -521,12 +539,16 @@ void main() {
   if (length(x) < 1.0) captured = true;
 
   // O céu usa derivadas de tela, que só valem em fluxo uniforme: por isso ele
-  // é calculado para todo pixel, depois do laço e fora de qualquer if, mesmo
-  // nos que caíram no buraco ou pararam no disco.
+  // é chamado para todo pixel, depois do laço e fora de qualquer if, mesmo nos
+  // que caíram no buraco ou pararam no disco (nesses, ele pula a parte cara).
   vec3 dir = normalize(v);
-  vec3 background = sky(dir, pixelFootprint(dir));
-  if (captured) background = vec3(0.0);
-  vec3 col = disk + (1.0 - opacity) * background;
+  float skyWeight = captured ? 0.0 : 1.0 - opacity;
+  vec3 background = sky(dir, pixelFootprint(dir), skyWeight);
+  // Num raio que caiu, a direção final não tem significado e o céu pode sair
+  // inválido (NaN); multiplicar por zero não apaga um NaN, e o desfoque do
+  // bloom espalharia esse valor pela tela inteira. Por isso o descarte é com if.
+  vec3 col = disk;
+  if (!captured) col += skyWeight * background;
 
   // No modo de depuração a sombra sai com alfa 0 (a página é preta, então não
   // muda nada na tela): é assim que o JS mede o raio dela com readPixels.

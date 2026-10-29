@@ -7,15 +7,24 @@ import type { ShadowMeasure } from '../state/store.ts'
 const BAND = 31
 const HALF = BAND >> 1
 
-let rows = new Uint8Array(0)
-let cols = new Uint8Array(0)
+/** Framebuffer de onde ler: a tela (8 bits) ou uma render target em ponto flutuante. */
+export type PixelSource = { width: number; height: number; float: boolean }
 
-// Meia corda da sombra numa linha de n pixels (alfa 0 = sombra), medida a
-// partir do pixel do meio. Devolve null se a linha não cruza a sombra ou se a
-// sombra encosta na borda da tela (corda cortada).
-function halfChord(buf: Uint8Array, n: number, index: (k: number) => number) {
+type Pixels = Uint8Array<ArrayBuffer> | Float32Array<ArrayBuffer>
+
+let rows: Pixels = new Uint8Array(0)
+let cols: Pixels = new Uint8Array(0)
+
+function buffer(current: Pixels, length: number, float: boolean): Pixels {
+  if (current.length === length && current instanceof Float32Array === float) return current
+  return float ? new Float32Array(length) : new Uint8Array(length)
+}
+
+// Meia corda da sombra numa linha de n pixels, medida a partir do pixel do
+// meio. Devolve null se a linha não cruza a sombra ou se a sombra encosta na
+// borda da tela (corda cortada).
+function halfChord(n: number, inShadow: (k: number) => boolean) {
   const mid = n >> 1
-  const inShadow = (k: number) => buf[index(k) + 3] < 128
   if (!inShadow(mid)) return null
   let a = mid
   let b = mid
@@ -34,30 +43,34 @@ function halfChord(buf: Uint8Array, n: number, index: (k: number) => number) {
  */
 export function measureShadow(
   gl: WebGL2RenderingContext,
+  source: PixelSource,
   camera: PerspectiveCamera,
   cssHeight: number,
 ): ShadowMeasure | null {
-  const w = gl.drawingBufferWidth
-  const h = gl.drawingBufferHeight
-  if (rows.length !== w * BAND * 4) rows = new Uint8Array(w * BAND * 4)
-  if (cols.length !== h * BAND * 4) cols = new Uint8Array(h * BAND * 4)
+  const { width: w, height: h, float } = source
+  rows = buffer(rows, w * BAND * 4, float)
+  cols = buffer(cols, h * BAND * 4, float)
+  const type = float ? gl.FLOAT : gl.UNSIGNED_BYTE
   const row0 = (h >> 1) - HALF
   const col0 = (w >> 1) - HALF
-  gl.readPixels(0, row0, w, BAND, gl.RGBA, gl.UNSIGNED_BYTE, rows)
-  gl.readPixels(col0, 0, BAND, h, gl.RGBA, gl.UNSIGNED_BYTE, cols)
+  gl.readPixels(0, row0, w, BAND, gl.RGBA, type, rows)
+  gl.readPixels(col0, 0, BAND, h, gl.RGBA, type, cols)
+
+  // Alfa abaixo da metade da escala = sombra.
+  const half = float ? 0.5 : 128
 
   let sum = 0
   let count = 0
   for (let j = 0; j < BAND; j++) {
     // Distância do centro do pixel até o centro da tela, em pixels.
     const rowOffset = row0 + j + 0.5 - h / 2
-    const cRow = halfChord(rows, w, (k) => (j * w + k) * 4)
+    const cRow = halfChord(w, (k) => rows[(j * w + k) * 4 + 3] < half)
     if (cRow !== null) {
       sum += Math.hypot(cRow, rowOffset)
       count++
     }
     const colOffset = col0 + j + 0.5 - w / 2
-    const cCol = halfChord(cols, h, (k) => (k * BAND + j) * 4)
+    const cCol = halfChord(h, (k) => cols[(k * BAND + j) * 4 + 3] < half)
     if (cCol !== null) {
       sum += Math.hypot(cCol, colOffset)
       count++

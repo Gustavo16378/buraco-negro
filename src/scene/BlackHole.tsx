@@ -1,17 +1,19 @@
 import { useFrame } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
-import { GLSL3, MathUtils, Matrix4, Mesh, PerspectiveCamera, ShaderMaterial, Vector3 } from 'three'
+import { FloatType, GLSL3, HalfFloatType, MathUtils, Matrix4, Mesh, PerspectiveCamera, ShaderMaterial, Vector3 } from 'three'
 import { DEBUG } from '../debug.ts'
 import fragmentShader from '../shaders/blackhole.frag.glsl?raw'
 import vertexShader from '../shaders/fullscreen.vert.glsl?raw'
 import { useStore } from '../state/store.ts'
 import { measureShadow } from './shadowProbe.ts'
 
-// Passos de integração por raio (SPEC: 300 no desktop).
-const MAX_STEPS = 300
 // Tempo da simulação, em unidades de r_s / c, por segundo real. Com 4, o gás
 // na borda interna (r = 3) dá uma volta em ~12 s e na borda externa em ~90 s.
 const TIME_SCALE = 4
+// Maior intervalo entre quadros que a animação aceita, em segundos. Depois de
+// a aba ficar oculta, o primeiro quadro traz um intervalo enorme; sem esse
+// limite o disco e a troca de modo dariam um salto.
+const MAX_DELTA = 0.1
 // No modo de depuração, mede a sombra a cada tantos quadros (readPixels trava a GPU).
 const MEASURE_EVERY = 20
 // Duração da troca entre os modos Interstellar e Física real, em segundos.
@@ -30,20 +32,29 @@ export function BlackHole() {
       uCamMatrix: { value: new Matrix4() },
       uFov: { value: 1 },
       uAspect: { value: 1 },
-      uMaxSteps: { value: MAX_STEPS },
+      uMaxSteps: { value: useStore.getState().quality.steps },
       uDebug: { value: DEBUG ? 1 : 0 },
       uDiskIn: { value: 3 },
       uDiskOut: { value: 12 },
-      uTemp: { value: 7000 },
+      // Temperatura de pico do disco. O SPEC parte de ~7000 K, mas esse branco
+      // levemente azulado, depois do ACES (que tira saturação dos brilhos
+      // fortes), deixava o disco cinza-prateado. 4800 K dá o branco quente no
+      // centro e o dourado nas bordas do filme.
+      uTemp: { value: 4800 },
       uTime: { value: 0 },
       uRealismo: { value: 0 },
     }),
     [],
   )
 
-  useFrame(({ camera }, delta) => {
+  useFrame(({ camera }, rawDelta) => {
     if (!material.current) return
     const u = material.current.uniforms
+    const delta = Math.min(rawDelta, MAX_DELTA)
+    const { mode, quality } = useStore.getState()
+
+    // Passos por raio: o PerformanceMonitor (Quality.tsx) ajusta.
+    u.uMaxSteps.value = quality.steps
 
     // Acumula em vez de usar o relógio absoluto, para a velocidade do tempo
     // poder mudar depois sem o disco dar saltos.
@@ -52,7 +63,7 @@ export function BlackHole() {
     // Troca de modo animada: o andamento anda em linha reta até o alvo em
     // MODE_TRANSITION segundos, e o uniform recebe uma curva suave dele, para
     // começar e terminar sem tranco.
-    const target = useStore.getState().mode === 'real' ? 1 : 0
+    const target = mode === 'real' ? 1 : 0
     const step = delta / MODE_TRANSITION
     realism.current += MathUtils.clamp(target - realism.current, -step, step)
     u.uRealismo.value = MathUtils.smoothstep(realism.current, 0, 1)
@@ -68,15 +79,26 @@ export function BlackHole() {
     }
   })
 
-  // A medida precisa ler o framebuffer logo depois do desenho, antes de o
-  // navegador apresentar o quadro, por isso fica no onAfterRender do quad.
+  // A medida precisa ler o resultado do shader logo depois do desenho do quad.
+  // Com o pós-processamento, esse desenho vai para a render target de entrada
+  // do compositor (ponto flutuante, antes do bloom e do tone mapping), que é
+  // o que fica ligado no onAfterRender.
   useEffect(() => {
     const m = mesh.current
     if (!DEBUG || !m) return
     let frame = 0
     m.onAfterRender = (renderer, _scene, camera) => {
       if (frame++ % MEASURE_EVERY !== 0 || !(camera instanceof PerspectiveCamera)) return
-      const result = measureShadow(renderer.getContext() as WebGL2RenderingContext, camera, renderer.domElement.clientHeight)
+      const gl = renderer.getContext() as WebGL2RenderingContext
+      const target = renderer.getRenderTarget()
+      const source = target
+        ? {
+            width: target.width,
+            height: target.height,
+            float: target.texture.type === HalfFloatType || target.texture.type === FloatType,
+          }
+        : { width: gl.drawingBufferWidth, height: gl.drawingBufferHeight, float: false }
+      const result = measureShadow(gl, source, camera, renderer.domElement.clientHeight)
       if (result) setShadow(result)
     }
     return () => {
