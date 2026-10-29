@@ -36,6 +36,27 @@ export type ProbePoint = { x: number; y: number }
 /** O que o shader calculou no pixel da sonda (passada de verificação do ?debug). */
 export type GpuProbe = { destination: Destination; r: number; g: number; opacity: number }
 
+/** Precisão de um tipo no fragment shader: bits de mantissa e expoente máximo (getShaderPrecisionFormat). */
+export type PrecisionFormat = { precision: number; rangeMax: number }
+
+/** Diagnóstico do aparelho para o ?debug: o que a GPU oferece e se ela calcula o céu como a CPU. */
+export type DeviceInfo = {
+  gpu: string
+  highFloat: PrecisionFormat
+  mediumFloat: PrecisionFormat
+  highInt: PrecisionFormat
+  /** Precisão que o three escolheu para os shaders. */
+  shaderPrecision: string
+  maxTextureSize: number
+  /** Formato em que dá para ler resultados da GPU; null se nenhum. */
+  readback: 'float32' | 'float16' | null
+  /** Autoteste do céu: valor da GPU e da CPU (null se não deu para ler da GPU). */
+  selfTest: { hash: [number, number]; noise: [number, number]; fbm: [number, number]; milkyWay: number } | null
+}
+
+/** Resolução interna de renderização e da tela física, para o ?debug. */
+export type RenderInfo = { width: number; height: number; physicalWidth: number; physicalHeight: number; devicePixelRatio: number }
+
 /** Resolução de renderização (dpr) e passos de integração por raio. */
 export type Quality = { dpr: number; steps: number }
 
@@ -62,6 +83,10 @@ type State = {
   setQuality: (quality: Quality) => void
   fps: number
   setFps: (fps: number) => void
+  device: DeviceInfo | null
+  setDevice: (device: DeviceInfo) => void
+  render: RenderInfo | null
+  setRender: (render: RenderInfo) => void
   shadow: ShadowMeasure | null
   setShadow: (shadow: ShadowMeasure) => void
 }
@@ -88,6 +113,10 @@ export const useStore = create<State>()((set) => ({
   setQuality: (quality) => set({ quality }),
   fps: 0,
   setFps: (fps) => set({ fps }),
+  device: null,
+  setDevice: (device) => set({ device }),
+  render: null,
+  setRender: (render) => set({ render }),
   shadow: null,
   setShadow: (shadow) => set({ shadow }),
 }))

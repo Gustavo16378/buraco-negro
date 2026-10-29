@@ -1,20 +1,57 @@
+import type { ReactNode } from 'react'
 import { useT } from '../i18n/index.ts'
-import { useStore } from '../state/store.ts'
+import { useStore, type PrecisionFormat } from '../state/store.ts'
 
 // Critério de aceite do SPEC: raio medido a menos de 2% do esperado.
 const TOLERANCE = 2
+// Autoteste do céu: diferença relativa aceita entre GPU e CPU. Em 16 bits a
+// própria leitura arredonda ~0,05%, então a folga é maior.
+const SELF_TEST_TOLERANCE = { float32: 1e-4, float16: 2e-3 }
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <>
+      <p className="mt-2 text-accent first:mt-0">{title}</p>
+      <dl className="grid grid-cols-[auto_auto] gap-x-4">{children}</dl>
+    </>
+  )
+}
+
+function Row({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <>
+      <dt>{label}</dt>
+      <dd className="text-right">{children}</dd>
+    </>
+  )
+}
 
 export function DebugPanel() {
   const t = useT()
+  const d = t.debug
   const shadow = useStore((s) => s.shadow)
   const quality = useStore((s) => s.quality)
   const fps = useStore((s) => s.fps)
+  const device = useStore((s) => s.device)
+  const render = useStore((s) => s.render)
 
   const num = new Intl.NumberFormat(t.locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const int = new Intl.NumberFormat(t.locale, { maximumFractionDigits: 0 })
+  const fine = new Intl.NumberFormat(t.locale, { minimumFractionDigits: 5, maximumFractionDigits: 5 })
 
   const diff = shadow ? (shadow.measuredDeg / shadow.expectedDeg - 1) * 100 : 0
   const ok = Math.abs(diff) < TOLERANCE
+
+  const format = (f: PrecisionFormat) => (f.precision > 0 || f.rangeMax > 0 ? d.bits(f.precision, f.rangeMax) : d.none)
+  const tolerance = SELF_TEST_TOLERANCE[device?.readback ?? 'float32']
+  const compare = ([gpu, cpu]: [number, number]) => {
+    const same = Math.abs(gpu - cpu) <= tolerance * Math.max(Math.abs(cpu), 1e-6)
+    return (
+      <span className={same ? undefined : 'text-accent'}>
+        {fine.format(gpu)} · {same ? d.same : d.different}
+      </span>
+    )
+  }
 
   return (
     <>
@@ -31,29 +68,65 @@ export function DebugPanel() {
           />
         </svg>
       )}
-      <div className="pointer-events-none fixed top-4 left-4 border border-line bg-black/70 px-3 py-2 font-mono text-xs leading-5 text-ink">
-        <p className="text-accent">{t.debug.title}</p>
-        <dl className="grid grid-cols-[auto_auto] gap-x-4">
-          <dt>{t.debug.fps}</dt>
-          <dd className="text-right">{int.format(fps)}</dd>
-          <dt>{t.debug.dpr}</dt>
-          <dd className="text-right">{num.format(quality.dpr)}</dd>
-          <dt>{t.debug.steps}</dt>
-          <dd className="text-right">{quality.steps}</dd>
-          {shadow && (
+      <div className="pointer-events-none fixed top-4 left-4 max-w-[calc(100vw-7rem)] border border-line bg-black/75 px-3 py-2 font-mono text-[11px] leading-[1.35rem] text-ink">
+        <Section title={d.title}>
+          <Row label={d.fps}>{int.format(fps)}</Row>
+          <Row label={d.dpr}>{num.format(quality.dpr)}</Row>
+          <Row label={d.steps}>{quality.steps}</Row>
+          {render && (
             <>
-              <dt>{t.debug.distance}</dt>
-              <dd className="text-right">{num.format(shadow.camDist)} r_s</dd>
-              <dt>{t.debug.shadowMeasured}</dt>
-              <dd className="text-right">{num.format(shadow.measuredDeg)}°</dd>
-              <dt>{t.debug.shadowExpected}</dt>
-              <dd className="text-right">{num.format(shadow.expectedDeg)}°</dd>
-              <dt>{t.debug.difference}</dt>
-              <dd className="text-right">{num.format(diff)}%</dd>
+              <Row label={d.render}>
+                {render.width}×{render.height}
+              </Row>
+              <dd className="col-span-2 text-right text-ink/60">
+                {d.ofScreen(int.format((render.width / render.physicalWidth) * 100))}
+              </dd>
+              <Row label={d.deviceDpr}>{num.format(render.devicePixelRatio)}</Row>
             </>
           )}
-        </dl>
-        {shadow && <p className={ok ? 'text-ink' : 'text-accent'}>{ok ? t.debug.withinLimit : t.debug.aboveLimit}</p>}
+        </Section>
+
+        {device && (
+          <Section title={d.device}>
+            <dd className="col-span-2 break-all text-ink/80">{device.gpu}</dd>
+            <Row label={d.highp}>{format(device.highFloat)}</Row>
+            <Row label={d.mediump}>{format(device.mediumFloat)}</Row>
+            <Row label={d.highInt}>{device.highInt.rangeMax > 0 ? d.intRange(device.highInt.rangeMax) : d.none}</Row>
+            <Row label={d.shaderPrecision}>{device.shaderPrecision}</Row>
+            <Row label={d.maxTexture}>{device.maxTextureSize}</Row>
+            <Row label={d.readback}>{device.readback ?? d.unavailable}</Row>
+          </Section>
+        )}
+
+        {device && (
+          <Section title={d.selfTest}>
+            {device.selfTest ? (
+              <>
+                <Row label={d.hash}>{compare(device.selfTest.hash)}</Row>
+                <Row label={d.noise}>{compare(device.selfTest.noise)}</Row>
+                <Row label={d.fbm}>{compare(device.selfTest.fbm)}</Row>
+                <Row label={d.milkyWay}>
+                  <span className={device.selfTest.milkyWay > 0.001 ? undefined : 'text-accent'}>
+                    {fine.format(device.selfTest.milkyWay)}
+                  </span>
+                </Row>
+                {device.selfTest.milkyWay <= 0.001 && <dd className="col-span-2 text-accent">{d.milkyWayZero}</dd>}
+              </>
+            ) : (
+              <dd className="col-span-2">{d.unavailable}</dd>
+            )}
+          </Section>
+        )}
+
+        {shadow && (
+          <Section title={d.shadow}>
+            <Row label={d.distance}>{num.format(shadow.camDist)} r_s</Row>
+            <Row label={d.shadowMeasured}>{num.format(shadow.measuredDeg)}°</Row>
+            <Row label={d.shadowExpected}>{num.format(shadow.expectedDeg)}°</Row>
+            <Row label={d.difference}>{num.format(diff)}%</Row>
+            <dd className={`col-span-2 ${ok ? 'text-ink' : 'text-accent'}`}>{ok ? d.withinLimit : d.aboveLimit}</dd>
+          </Section>
+        )}
       </div>
     </>
   )

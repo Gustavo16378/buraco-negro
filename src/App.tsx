@@ -6,6 +6,7 @@ import { useT } from './i18n/index.ts'
 import { BlackHole } from './scene/BlackHole.tsx'
 import { CameraRig } from './scene/CameraRig.tsx'
 import { Effects } from './scene/Effects.tsx'
+import { DeviceDiagnostics } from './scene/DeviceDiagnostics.tsx'
 import { ProbeTracer } from './scene/ProbeTracer.tsx'
 import { Quality } from './scene/Quality.tsx'
 import { useStore } from './state/store.ts'
@@ -60,6 +61,7 @@ export default function App() {
         <Effects />
         <Quality />
         <ProbeTracer />
+        {DEBUG && <DeviceDiagnostics />}
       </Canvas>
       <ProbeMarker />
       <ModeToggle />

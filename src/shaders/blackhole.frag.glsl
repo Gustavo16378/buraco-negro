@@ -14,8 +14,10 @@ uniform float uDiskOut;  // raio externo do disco
 uniform float uTemp;     // temperatura de pico do disco, em kelvin
 uniform float uTime;     // tempo da simulação, em unidades de r_s / c
 uniform float uRealismo; // 0 = modo Interstellar (sem desvio de frequência), 1 = Física real
-uniform float uProbe;    // 1 só na passada de verificação da sonda de raio (?debug)
+uniform float uProbe;    // ?debug: 1 na verificação da sonda de raio, 2 no autoteste do céu
 uniform vec2 uProbeUv;   // pixel da sonda, em coordenadas de tela de -1 a 1 (como vUv)
+uniform uvec3 uSelfTestHash; // entrada fixa do hash no autoteste (a mesma da CPU)
+uniform vec3 uSelfTestPoint; // ponto fixo do ruído no autoteste (o mesmo da CPU)
 
 in vec2 vUv;
 out vec4 fragColor;
@@ -490,6 +492,16 @@ vec3 observerToRay(vec3 n, vec3 x) {
 }
 
 void main() {
+  // Autoteste do céu (?debug): o hash, o ruído e o fbm em entradas fixas,
+  // para comparar com a mesma conta feita na CPU, e o brilho da Via Láctea no
+  // centro galáctico (zero aqui quer dizer que a faixa some na tela).
+  if (uProbe > 1.5) {
+    Galaxy g = milkyWay(GAL_C);
+    fragColor = vec4(hash31(uSelfTestHash), noise3(uSelfTestPoint), fbm(uSelfTestPoint, 5),
+                     dot(g.glow, vec3(0.2126, 0.7152, 0.0722)));
+    return;
+  }
+
   // Na passada de verificação da sonda, o pixel calculado é o da sonda.
   vec2 uv = uProbe > 0.5 ? uProbeUv : vUv;
   vec3 x = uCamPos;

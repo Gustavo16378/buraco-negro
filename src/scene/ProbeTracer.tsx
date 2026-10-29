@@ -1,10 +1,11 @@
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useRef } from 'react'
-import { FloatType, MathUtils, Matrix4, Mesh, PlaneGeometry, Scene, Vector2, Vector3, WebGLRenderTarget } from 'three'
+import { MathUtils, Matrix4, Vector2, Vector3 } from 'three'
 import { DEBUG } from '../debug.ts'
 import { pixelUv, readProbe } from '../physics/probe.ts'
 import type { Destination } from '../physics/trace.ts'
 import { useStore, type GpuProbe } from '../state/store.ts'
+import { createShaderPass, type ShaderPass } from './gpuReadback.ts'
 import { sceneShared } from './shared.ts'
 
 // Um toque vira sonda se o dedo (ou o mouse) andar menos que isso e soltar
@@ -15,13 +16,6 @@ const TAP_TIME = 300 // ms
 const UPDATE_EVERY = 0.1 // s
 
 const DESTINATIONS: Destination[] = ['sky', 'horizon', 'disk']
-
-type VerifyPass = {
-  quad: Mesh
-  scene: Scene
-  target: WebGLRenderTarget
-  pixel: Float32Array<ArrayBuffer>
-}
 
 export function ProbeTracer() {
   const gl = useThree((s) => s.gl)
@@ -85,22 +79,17 @@ export function ProbeTracer() {
   }, [])
 
   // Passada de verificação (?debug): o mesmo material desenha só o pixel da
-  // sonda numa render target 1 x 1 de ponto flutuante.
-  const verify = useRef<VerifyPass | null>(null)
+  // sonda, em ponto flutuante de 32 bits ou, se o aparelho não deixa, de 16.
+  const verify = useRef<ShaderPass | null>(null)
   useEffect(() => {
     if (!DEBUG) return
-    const quad = new Mesh(new PlaneGeometry(2, 2))
-    quad.frustumCulled = false
-    const scene = new Scene()
-    scene.add(quad)
-    const pass = { quad, scene, target: new WebGLRenderTarget(1, 1, { type: FloatType }), pixel: new Float32Array(4) }
+    const pass = createShaderPass(gl)
     verify.current = pass
     return () => {
-      pass.target.dispose()
-      pass.quad.geometry.dispose()
+      pass?.dispose()
       verify.current = null
     }
-  }, [])
+  }, [gl])
 
   // Prioridade 0,5: roda depois do BlackHole (0), que atualiza os uniforms do
   // quadro, e antes do pós-processamento (1), que desenha a tela. Assim o
@@ -150,15 +139,7 @@ export function ProbeTracer() {
     if (pass) {
       const [ux, uy] = pixelUv(px, py, width, height)
       ;(u.uProbeUv.value as Vector2).set(ux, uy)
-      u.uProbe.value = 1
-      pass.quad.material = material
-      const previous = gl.getRenderTarget()
-      gl.setRenderTarget(pass.target)
-      gl.render(pass.scene, camera)
-      gl.readRenderTargetPixels(pass.target, 0, 0, 1, 1, pass.pixel)
-      gl.setRenderTarget(previous)
-      u.uProbe.value = 0
-      const [dest, r, g, opacity] = pass.pixel
+      const [dest, r, g, opacity] = pass.run(material, camera, 1)
       gpu = { destination: DESTINATIONS[Math.round(dest)] ?? 'sky', r, g, opacity }
     }
 

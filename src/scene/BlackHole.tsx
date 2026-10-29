@@ -18,7 +18,8 @@ import fragmentShader from '../shaders/blackhole.frag.glsl?raw'
 import vertexShader from '../shaders/fullscreen.vert.glsl?raw'
 import { useStore } from '../state/store.ts'
 import { sceneShared } from './shared.ts'
-import { measureShadow } from './shadowProbe.ts'
+import { measureShadow, type PixelSource } from './shadowProbe.ts'
+import { SELF_TEST_HASH_INPUT, SELF_TEST_POINT } from './skySelfTest.ts'
 
 // Maior intervalo entre quadros que a animação aceita, em segundos. Depois de
 // a aba ficar oculta, o primeiro quadro traz um intervalo enorme; sem esse
@@ -51,6 +52,8 @@ export function BlackHole() {
       uRealismo: { value: 0 },
       uProbe: { value: 0 },
       uProbeUv: { value: new Vector2() },
+      uSelfTestHash: { value: new Vector3(...SELF_TEST_HASH_INPUT) },
+      uSelfTestPoint: { value: new Vector3(...SELF_TEST_POINT) },
     }),
     [],
   )
@@ -106,13 +109,17 @@ export function BlackHole() {
       if (frame++ % MEASURE_EVERY !== 0 || !(camera instanceof PerspectiveCamera)) return
       const gl = renderer.getContext() as WebGL2RenderingContext
       const target = renderer.getRenderTarget()
-      const source = target
-        ? {
-            width: target.width,
-            height: target.height,
-            float: target.texture.type === HalfFloatType || target.texture.type === FloatType,
-          }
-        : { width: gl.drawingBufferWidth, height: gl.drawingBufferHeight, float: false }
+      // A render target do compositor é float16. Dá para lê-la como float32 se
+      // o aparelho tem EXT_color_buffer_float (desktop); senão, em 16 bits.
+      const isFloat = target && (target.texture.type === HalfFloatType || target.texture.type === FloatType)
+      const type: PixelSource['type'] = !isFloat
+        ? 'byte'
+        : target.texture.type === FloatType || renderer.extensions.has('EXT_color_buffer_float')
+          ? 'float'
+          : 'half'
+      const source: PixelSource = target
+        ? { width: target.width, height: target.height, type }
+        : { width: gl.drawingBufferWidth, height: gl.drawingBufferHeight, type: 'byte' }
       const result = measureShadow(gl, source, camera, renderer.domElement.clientHeight)
       if (result) setShadow(result)
     }
