@@ -1,7 +1,7 @@
 // Buraco negro de Schwarzschild (sem rotação), unidades geométricas com
-// r_s = 1. Cada pixel lança um raio da câmera para trás no tempo, integra a
-// trajetória curvada pela gravidade e, se ele escapar, amostra o céu na
-// direção final.
+// r_s = 1. Cada pixel lança um raio da câmera para trás no tempo e integra a
+// trajetória curvada pela gravidade, somando a luz do disco de acreção a cada
+// vez que cruza o plano dele. Se o raio escapar, amostra o céu na direção final.
 
 uniform vec3 uCamPos;    // posição da câmera, em r_s
 uniform mat4 uCamMatrix; // matrixWorld da câmera
@@ -9,6 +9,10 @@ uniform float uFov;      // campo de visão vertical, em radianos
 uniform float uAspect;   // largura / altura
 uniform int uMaxSteps;   // limite de passos da integração por raio
 uniform float uDebug;    // 1 com ?debug na URL: alfa 0 nos pixels da sombra, para medir
+uniform float uDiskIn;   // raio interno do disco (ISCO = 3)
+uniform float uDiskOut;  // raio externo do disco
+uniform float uTemp;     // temperatura de pico do disco, em kelvin
+uniform float uTime;     // tempo da simulação, em unidades de r_s / c
 
 in vec2 vUv;
 out vec4 fragColor;
@@ -303,6 +307,98 @@ vec3 sky(vec3 d, Pixel P) {
 }
 
 // ---------------------------------------------------------------------------
+// Disco de acreção
+//
+// Fino, no plano y = 0, entre uDiskIn e uDiskOut. Gás em órbita circular
+// kepleriana, emitindo como corpo negro na temperatura local. Ainda sem os
+// desvios de frequência (Doppler e gravitacional): é o visual do filme.
+// ---------------------------------------------------------------------------
+
+// Brilho do disco na temperatura de pico (linear, HDR). Passa de 1 de
+// propósito: o tone mapping do pós-processamento comprime depois.
+const float DISK_EMISSION = 1.6;
+
+// Máximo de f(x) = x^-3/4 · (1 - x^-1/2)^1/4, que acontece em x = 49/36.
+const float T_PROFILE_PEAK = 0.487871;
+
+// Perfil de temperatura de disco fino (SPEC): zero na borda interna e pico
+// logo depois, em r = uDiskIn · 49/36 (~4,08). Dividido pelo máximo do perfil
+// para o pico ficar exatamente em uTemp.
+float diskTemperature(float r) {
+  float x = r / uDiskIn;
+  return uTemp * pow(x, -0.75) * pow(max(1.0 - inversesqrt(x), 0.0), 0.25) / T_PROFILE_PEAK;
+}
+
+// Cor de corpo negro pela aproximação de Tanner Helland (ajuste das tabelas de
+// Mitchell Charity), válida de 1000 K a 40000 K. Ela devolve a cor
+// normalizada (canal mais forte = 1) já em sRGB de tela; aqui ela volta para
+// linear, porque o shader trabalha em cor linear. O brilho vem à parte.
+vec3 blackbody(float kelvin) {
+  float t = clamp(kelvin, 1000.0, 40000.0) / 100.0;
+  vec3 c;
+  if (t <= 66.0) {
+    c.r = 255.0;
+    c.g = 99.4708025861 * log(t) - 161.1195681661;
+    c.b = t <= 19.0 ? 0.0 : 138.5177312231 * log(t - 10.0) - 305.0447927307;
+  } else {
+    c.r = 329.698727446 * pow(t - 60.0, -0.1332047592);
+    c.g = 288.1221695283 * pow(t - 60.0, -0.0755148492);
+    c.b = 255.0;
+  }
+  return sRGBTransferEOTF(vec4(clamp(c / 255.0, 0.0, 1.0), 1.0)).rgb;
+}
+
+// Ruído do gás em coordenadas polares. O ângulo vira um círculo no espaço do
+// ruído (sem emenda em ±π) e o raio vira o terceiro eixo. Frequência radial
+// alta e angular baixa: as manchas saem alongadas ao longo da órbita.
+float diskNoise(float r, float ang, float cycle) {
+  vec3 q = vec3(1.5 * cos(ang), 1.5 * sin(ang), 5.0 * r) + cycle * vec3(37.1, 11.7, 23.3);
+  return fbm(q, 4);
+}
+
+// Período (em r_s / c) em que cada cópia do ruído é reiniciada. Veja diskSample.
+const float FLOW_PERIOD = 40.0;
+
+// Uma amostra do disco no ponto p do plano, à distância r do centro.
+// Devolve a emissão (rgb, linear) e a opacidade (a).
+vec4 diskSample(vec3 p, float r) {
+  // O gás gira no sentido de φ crescente com a velocidade angular kepleriana
+  // Ω = sqrt(M / r³), M = 0,5. O centro gira mais rápido que a borda, então o
+  // ruído se estica em faixas finas.
+  // Aproximação visual: girar um único ruído para sempre esticaria as faixas
+  // sem limite, até ficarem menores que um pixel e cintilarem. Por isso há
+  // duas cópias do ruído, cada uma girando com Ω desde o próprio reinício a
+  // cada FLOW_PERIOD, defasadas em meio período e misturadas por pesos que vão
+  // a zero no reinício. A velocidade de cada faixa continua kepleriana.
+  float phi = atan(p.z, p.x);
+  float omega = sqrt(0.5 / (r * r * r));
+  float cycle = uTime / FLOW_PERIOD;
+  float age0 = fract(cycle);
+  float age1 = fract(cycle + 0.5);
+  float w0 = 1.0 - abs(2.0 * age0 - 1.0);
+  float w1 = 1.0 - w0;
+  float n0 = diskNoise(r, phi - omega * age0 * FLOW_PERIOD, floor(cycle));
+  float n1 = diskNoise(r, phi - omega * age1 * FLOW_PERIOD, floor(cycle + 0.5) + 0.5);
+  // Mistura que mantém o contraste (a média de dois ruídos seria mais lisa).
+  float n = 0.5 + ((n0 - 0.5) * w0 + (n1 - 0.5) * w1) * inversesqrt(w0 * w0 + w1 * w1);
+  float gas = smoothstep(0.3, 0.7, n);
+
+  // Densidade caindo suavemente nas bordas interna e externa. No miolo o disco
+  // é opaco, como pede o modelo de disco fino que emite como corpo negro
+  // (opticamente espesso): o ruído muda só o brilho, e a transparência fica
+  // nas bordas, onde a densidade cai.
+  float alpha = smoothstep(uDiskIn, uDiskIn + 0.4, r) * (1.0 - smoothstep(uDiskOut - 2.0, uDiskOut, r));
+
+  // Emissão de corpo negro: cor pela temperatura e brilho proporcional a T⁴
+  // (lei de Stefan-Boltzmann), relativo ao pico.
+  float T = diskTemperature(r);
+  float tr = T / uTemp;
+  vec3 emission = blackbody(T) * (tr * tr * tr * tr) * DISK_EMISSION * mix(0.5, 1.3, gas);
+
+  return vec4(emission, alpha);
+}
+
+// ---------------------------------------------------------------------------
 // Traçado dos raios
 //
 // A posição x é tratada como um ponto num espaço euclidiano auxiliar, com
@@ -357,23 +453,49 @@ void main() {
   vec3 L = cross(x, v);
   float h2 = dot(L, L);
 
+  // Luz do disco acumulada da frente para trás (o raio vai da câmera para a
+  // cena) e opacidade acumulada.
+  vec3 disk = vec3(0.0);
+  float opacity = 0.0;
+
   bool captured = false;
   for (int i = 0; i < MAX_STEPS; i++) {
     if (i >= uMaxSteps) break;                       // passos acabaram: trata como escapou
     float r = length(x);
     if (r < 1.0) { captured = true; break; }         // caiu no horizonte
     if (r > ESCAPE_R && dot(x, v) > 0.0) break;      // escapou
+    vec3 prev = x;
     // Passo adaptativo: menor perto do buraco, onde a curvatura é forte.
     rk4(x, v, h2, clamp(0.08 * r, 0.02, 1.5));
+
+    // Cruzou o plano do disco? O raio pode cruzar várias vezes: é isso que
+    // mostra a parte de trás do disco por cima e por baixo da sombra, e as
+    // imagens secundárias perto do anel de fótons.
+    if ((prev.y > 0.0) != (x.y > 0.0)) {
+      // Ponto de cruzamento por interpolação linear entre as duas pontas do
+      // passo (aproximação: o trecho é tratado como reto).
+      vec3 p = mix(prev, x, prev.y / (prev.y - x.y));
+      float rp = length(p);
+      if (rp > uDiskIn && rp < uDiskOut) {
+        vec4 s = diskSample(p, rp);
+        disk += (1.0 - opacity) * s.a * s.rgb;
+        opacity += (1.0 - opacity) * s.a;
+        // O que está atrás já não aparece. No modo de depuração o raio segue
+        // mesmo assim, para saber se ele cai no horizonte e medir a sombra
+        // inteira, inclusive a parte escondida atrás do disco.
+        if (opacity > 0.99 && uDebug < 0.5) break;
+      }
+    }
   }
   if (length(x) < 1.0) captured = true;
 
   // O céu usa derivadas de tela, que só valem em fluxo uniforme: por isso ele
   // é calculado para todo pixel, depois do laço e fora de qualquer if, mesmo
-  // nos que caíram no buraco.
+  // nos que caíram no buraco ou pararam no disco.
   vec3 dir = normalize(v);
-  vec3 col = sky(dir, pixelFootprint(dir));
-  if (captured) col = vec3(0.0);
+  vec3 background = sky(dir, pixelFootprint(dir));
+  if (captured) background = vec3(0.0);
+  vec3 col = disk + (1.0 - opacity) * background;
 
   // No modo de depuração a sombra sai com alfa 0 (a página é preta, então não
   // muda nada na tela): é assim que o JS mede o raio dela com readPixels.

@@ -9,6 +9,9 @@ import { measureShadow } from './shadowProbe.ts'
 
 // Passos de integração por raio (SPEC: 300 no desktop).
 const MAX_STEPS = 300
+// Tempo da simulação, em unidades de r_s / c, por segundo real. Com 4, o gás
+// na borda interna (r = 3) dá uma volta em ~12 s e na borda externa em ~90 s.
+const TIME_SCALE = 4
 // No modo de depuração, mede a sombra a cada tantos quadros (readPixels trava a GPU).
 const MEASURE_EVERY = 20
 
@@ -25,13 +28,21 @@ export function BlackHole() {
       uAspect: { value: 1 },
       uMaxSteps: { value: MAX_STEPS },
       uDebug: { value: DEBUG ? 1 : 0 },
+      uDiskIn: { value: 3 },
+      uDiskOut: { value: 12 },
+      uTemp: { value: 7000 },
+      uTime: { value: 0 },
     }),
     [],
   )
 
-  useFrame(({ camera }) => {
+  useFrame(({ camera }, delta) => {
     if (!material.current) return
     const u = material.current.uniforms
+
+    // Acumula em vez de usar o relógio absoluto, para a velocidade do tempo
+    // poder mudar depois sem o disco dar saltos.
+    u.uTime.value += delta * TIME_SCALE
 
     // O OrbitControls move a câmera antes deste callback, mas a matrixWorld
     // só seria recalculada no render. Atualiza aqui para não usar o frame anterior.
