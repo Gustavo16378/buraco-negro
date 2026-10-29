@@ -14,10 +14,14 @@ const MAX_STEPS = 300
 const TIME_SCALE = 4
 // No modo de depuração, mede a sombra a cada tantos quadros (readPixels trava a GPU).
 const MEASURE_EVERY = 20
+// Duração da troca entre os modos Interstellar e Física real, em segundos.
+const MODE_TRANSITION = 0.8
 
 export function BlackHole() {
   const mesh = useRef<Mesh>(null)
   const material = useRef<ShaderMaterial>(null)
+  // Andamento linear da troca de modo, de 0 (Interstellar) a 1 (Física real).
+  const realism = useRef(useStore.getState().mode === 'real' ? 1 : 0)
   const setShadow = useStore((s) => s.setShadow)
 
   const uniforms = useMemo(
@@ -32,6 +36,7 @@ export function BlackHole() {
       uDiskOut: { value: 12 },
       uTemp: { value: 7000 },
       uTime: { value: 0 },
+      uRealismo: { value: 0 },
     }),
     [],
   )
@@ -43,6 +48,14 @@ export function BlackHole() {
     // Acumula em vez de usar o relógio absoluto, para a velocidade do tempo
     // poder mudar depois sem o disco dar saltos.
     u.uTime.value += delta * TIME_SCALE
+
+    // Troca de modo animada: o andamento anda em linha reta até o alvo em
+    // MODE_TRANSITION segundos, e o uniform recebe uma curva suave dele, para
+    // começar e terminar sem tranco.
+    const target = useStore.getState().mode === 'real' ? 1 : 0
+    const step = delta / MODE_TRANSITION
+    realism.current += MathUtils.clamp(target - realism.current, -step, step)
+    u.uRealismo.value = MathUtils.smoothstep(realism.current, 0, 1)
 
     // O OrbitControls move a câmera antes deste callback, mas a matrixWorld
     // só seria recalculada no render. Atualiza aqui para não usar o frame anterior.

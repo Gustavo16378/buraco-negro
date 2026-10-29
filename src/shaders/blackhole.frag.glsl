@@ -13,6 +13,7 @@ uniform float uDiskIn;   // raio interno do disco (ISCO = 3)
 uniform float uDiskOut;  // raio externo do disco
 uniform float uTemp;     // temperatura de pico do disco, em kelvin
 uniform float uTime;     // tempo da simulação, em unidades de r_s / c
+uniform float uRealismo; // 0 = modo Interstellar (sem desvio de frequência), 1 = Física real
 
 in vec2 vUv;
 out vec4 fragColor;
@@ -310,8 +311,9 @@ vec3 sky(vec3 d, Pixel P) {
 // Disco de acreção
 //
 // Fino, no plano y = 0, entre uDiskIn e uDiskOut. Gás em órbita circular
-// kepleriana, emitindo como corpo negro na temperatura local. Ainda sem os
-// desvios de frequência (Doppler e gravitacional): é o visual do filme.
+// kepleriana, emitindo como corpo negro na temperatura local. No modo Física
+// real a luz sofre os desvios de frequência Doppler e gravitacional; no modo
+// Interstellar eles ficam de fora, como no filme.
 // ---------------------------------------------------------------------------
 
 // Brilho do disco na temperatura de pico (linear, HDR). Passa de 1 de
@@ -359,9 +361,31 @@ float diskNoise(float r, float ang, float cycle) {
 // Período (em r_s / c) em que cada cópia do ruído é reiniciada. Veja diskSample.
 const float FLOW_PERIOD = 40.0;
 
-// Uma amostra do disco no ponto p do plano, à distância r do centro.
-// Devolve a emissão (rgb, linear) e a opacidade (a).
-vec4 diskSample(vec3 p, float r) {
+// Fator de desvio de frequência g = ν_observado / ν_emitido da luz que sai do
+// gás no ponto p e chega à câmera (SPEC, "Modo Física real").
+//   Doppler relativístico: o gás em órbita se move a β = sqrt(0,5 / (r - 1))
+//   (velocidade medida por um observador parado ali; 0,5 c na ISCO), na
+//   direção t̂ da rotação. Com n = direção do fóton (do gás para a câmera),
+//   D = 1 / (γ · (1 - β · t̂·n)).
+//   Gravitacional: a luz perde energia ao subir do poço até a câmera,
+//   g_grav = sqrt(1 - 1/r) / sqrt(1 - 1/r_câmera).
+// Aproximação: rayDir está nas coordenadas da integração, e a velocidade do
+// gás é medida no referencial local. Misturar as duas é aceitável para
+// visualização (SPEC); o erro é pequeno longe do horizonte.
+float frequencyShift(vec3 p, float r, vec3 rayDir) {
+  float beta = sqrt(0.5 / (r - 1.0));
+  float gamma = inversesqrt(1.0 - beta * beta);
+  vec3 t = normalize(vec3(-p.z, 0.0, p.x));
+  vec3 n = -rayDir; // o raio foi traçado da câmera para o gás; o fóton faz o caminho inverso
+  float doppler = 1.0 / (gamma * (1.0 - beta * dot(t, n)));
+  float grav = sqrt(1.0 - 1.0 / r) / sqrt(1.0 - 1.0 / length(uCamPos));
+  return doppler * grav;
+}
+
+// Uma amostra do disco no ponto p do plano, à distância r do centro, vista
+// por um raio com direção rayDir. Devolve a emissão (rgb, linear) e a
+// opacidade (a).
+vec4 diskSample(vec3 p, float r, vec3 rayDir) {
   // O gás gira no sentido de φ crescente com a velocidade angular kepleriana
   // Ω = sqrt(M / r³), M = 0,5. O centro gira mais rápido que a borda, então o
   // ruído se estica em faixas finas.
@@ -389,11 +413,16 @@ vec4 diskSample(vec3 p, float r) {
   // nas bordas, onde a densidade cai.
   float alpha = smoothstep(uDiskIn, uDiskIn + 0.4, r) * (1.0 - smoothstep(uDiskOut - 2.0, uDiskOut, r));
 
-  // Emissão de corpo negro: cor pela temperatura e brilho proporcional a T⁴
-  // (lei de Stefan-Boltzmann), relativo ao pico.
-  float T = diskTemperature(r);
-  float tr = T / uTemp;
-  vec3 emission = blackbody(T) * (tr * tr * tr * tr) * DISK_EMISSION * mix(0.5, 1.3, gas);
+  // Desvio de frequência: no modo Interstellar g = 1 (como no filme); no
+  // Física real entra o valor calculado. uRealismo anima a troca.
+  float g = mix(1.0, frequencyShift(p, r, rayDir), uRealismo);
+
+  // Emissão de corpo negro na temperatura observada T_obs = g · T. O brilho é
+  // proporcional a T_obs⁴ (lei de Stefan-Boltzmann), relativo ao pico, o que
+  // já inclui o fator g⁴ do SPEC: (g · T)⁴ = g⁴ · T⁴.
+  float tObs = g * diskTemperature(r);
+  float tr = tObs / uTemp;
+  vec3 emission = blackbody(tObs) * (tr * tr * tr * tr) * DISK_EMISSION * mix(0.5, 1.3, gas);
 
   return vec4(emission, alpha);
 }
@@ -465,6 +494,7 @@ void main() {
     if (r < 1.0) { captured = true; break; }         // caiu no horizonte
     if (r > ESCAPE_R && dot(x, v) > 0.0) break;      // escapou
     vec3 prev = x;
+    vec3 prevV = v;
     // Passo adaptativo: menor perto do buraco, onde a curvatura é forte.
     rk4(x, v, h2, clamp(0.08 * r, 0.02, 1.5));
 
@@ -472,12 +502,13 @@ void main() {
     // mostra a parte de trás do disco por cima e por baixo da sombra, e as
     // imagens secundárias perto do anel de fótons.
     if ((prev.y > 0.0) != (x.y > 0.0)) {
-      // Ponto de cruzamento por interpolação linear entre as duas pontas do
-      // passo (aproximação: o trecho é tratado como reto).
-      vec3 p = mix(prev, x, prev.y / (prev.y - x.y));
+      // Ponto e direção no cruzamento por interpolação linear entre as duas
+      // pontas do passo (aproximação: o trecho é tratado como reto).
+      float f = prev.y / (prev.y - x.y);
+      vec3 p = mix(prev, x, f);
       float rp = length(p);
       if (rp > uDiskIn && rp < uDiskOut) {
-        vec4 s = diskSample(p, rp);
+        vec4 s = diskSample(p, rp, normalize(mix(prevV, v, f)));
         disk += (1.0 - opacity) * s.a * s.rgb;
         opacity += (1.0 - opacity) * s.a;
         // O que está atrás já não aparece. No modo de depuração o raio segue
