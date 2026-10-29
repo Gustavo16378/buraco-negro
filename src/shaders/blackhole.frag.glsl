@@ -83,7 +83,8 @@ vec3 milkyWay(vec3 d, out float band, out float transmission) {
 
   // Meia largura irregular (radianos), mais grossa perto do centro galáctico.
   float width = (0.09 + 0.13 * bulge) * mix(0.7, 1.3, noise3(d * 3.0 + 5.3));
-  if (abs(lat) > 3.5 * width) return vec3(0.0);
+  // A 5,5 meias larguras o halo já vale ~5e-4 do pico: cortar aqui não deixa borda.
+  if (abs(lat) > 5.5 * width) return vec3(0.0);
 
   band = exp(-lat * lat / (width * width));
 
@@ -91,16 +92,19 @@ vec3 milkyWay(vec3 d, out float band, out float transmission) {
   // direção perpendicular ao plano, então nuvens e poeira saem alongadas.
   vec3 q = d + GAL_N * dot(d, GAL_N) * 2.0;
 
-  // Brilho difuso de estrelas não resolvidas, em nuvens.
+  // Brilho difuso de estrelas não resolvidas, em nuvens: um núcleo mais forte
+  // e um halo fraco com o dobro da largura. Fica abaixo de ~0,6 (linear) no
+  // máximo, para o bloom da Etapa 5 não fazer a faixa brilhar como o disco.
   float clouds = fbm(q * 5.0 + 11.0, 5);
-  float glow = 0.022 * band * (2.0 * clouds * clouds) * (1.0 + 2.5 * bulge);
-  vec3 tint = mix(vec3(0.80, 0.85, 1.0), vec3(1.0, 0.82, 0.60), bulge);
+  float halo = exp(-lat * lat / (4.0 * width * width));
+  float glow = (0.15 * band * (0.4 + 2.4 * clouds * clouds) + 0.025 * halo * (0.3 + 1.4 * clouds)) * (1.0 + 1.5 * bulge);
+  vec3 tint = mix(vec3(0.82, 0.86, 1.0), vec3(1.0, 0.80, 0.56), bulge);
 
   // Faixas escuras de poeira, no meio da faixa e um pouco deslocadas do centro.
-  float dustLat = (lat - 0.25 * width) / (0.45 * width);
+  float dustLat = (lat - 0.2 * width) / (0.5 * width);
   float dustProfile = exp(-dustLat * dustLat);
-  float lanes = smoothstep(0.45, 0.62, fbm(q * 7.0 + 47.0, 5));
-  transmission = 1.0 - 0.9 * dustProfile * lanes;
+  float lanes = smoothstep(0.42, 0.58, fbm(q * 7.0 + 47.0, 5));
+  transmission = 1.0 - 0.92 * dustProfile * lanes;
 
   return glow * tint * transmission;
 }
@@ -195,15 +199,20 @@ vec3 sky(vec3 d, float pix, float pixRef) {
   // outras quase vazias (de 0,15x a 1,7x a densidade média).
   float clump = mix(0.15, 1.7, smoothstep(0.3, 0.7, fbm(d * 2.2 + 31.7, 2)));
 
-  // As camadas fracas se concentram na Via Láctea; as brilhantes, que são as
-  // estrelas mais próximas, ficam quase uniformes.
-  vec3 stars = vec3(0.0);
-  stars += starLayer(d, pix, pixRef, 200.0, 0.21 * clump * (1.0 + 4.0 * band), vec3(0.008, 0.06, 3.0), 0.0002, 0u);
-  stars += starLayer(d, pix, pixRef,  70.0, 0.30 * clump * (1.0 + 2.0 * band), vec3(0.03, 0.50, 5.0),  0.0003, 1u);
-  stars += starLayer(d, pix, pixRef,  24.0, 0.35 * clump * (1.0 + 0.5 * band), vec3(0.20, 4.00, 6.0),  0.0005, 2u);
-  stars += starLayer(d, pix, pixRef,   8.0, 0.30,                              vec3(3.00, 20.0, 2.0),  0.0007, 3u);
+  // A poeira esconde estrelas (reduz a chance de existirem) em vez de
+  // escurecê-las. Junto com o brilho mínimo alto de cada camada, isso garante
+  // que nenhuma estrela vire um ponto cinza quase apagado: ou ela aparece
+  // claramente, ou não aparece.
+  float open = clump * transmission;
 
-  return col + stars * transmission;
+  // Uma camada só existe dentro da Via Láctea; as outras ficam quase
+  // uniformes no céu, com só um pouco mais de estrelas na faixa.
+  col += starLayer(d, pix, pixRef, 160.0, 0.20 * band * band * open,              vec3(0.50, 1.00, 3.0), 0.0002, 0u);
+  col += starLayer(d, pix, pixRef,  70.0, min(0.36 * open * (1.0 + band), 0.85), vec3(0.40, 1.20, 3.0), 0.0003, 1u);
+  col += starLayer(d, pix, pixRef,  24.0, 0.35 * open,                            vec3(0.80, 4.00, 4.0), 0.0005, 2u);
+  col += starLayer(d, pix, pixRef,   8.0, 0.25 * transmission,                    vec3(4.00, 20.0, 2.0), 0.0007, 3u);
+
+  return col;
 }
 
 // ---------------------------------------------------------------------------
