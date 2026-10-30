@@ -37,6 +37,8 @@ export const sceneShared: {
   /** Só no com cache: fase do traçado e quanto da imagem parada já foi traçado (0 a 1). */
   phase: TracePhase | null
   refine: number
+  /** Só no com cache: quanto da suavização da imagem parada já foi feito (0 a 1). */
+  smoothing: number
   /** ?debug: medida do tempo de cada parte do quadro. */
   frameTimer: FrameTimer | null
-} = { renderer: null, selfTestMaterial: null, probe: null, traces: 0, phase: null, refine: 0, frameTimer: null }
+} = { renderer: null, selfTestMaterial: null, probe: null, traces: 0, phase: null, refine: 0, smoothing: 0, frameTimer: null }

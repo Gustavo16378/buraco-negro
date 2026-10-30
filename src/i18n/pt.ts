@@ -72,6 +72,7 @@ export const pt = {
     phaseMotion: 'em movimento',
     phaseRefining: (pct: string) => `refinando, ${pct}%`,
     phaseStill: 'imagem parada',
+    phaseSmoothing: (pct: string) => `parada, suavizando, ${pct}%`,
     motionDiv: 'divisor em movimento',
     timing: 'tempo por parte do quadro',
     timingNote: 'amostra a cada 1 s, esperando a GPU entre as partes',

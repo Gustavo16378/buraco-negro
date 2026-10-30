@@ -95,7 +95,9 @@ export function DebugPanel() {
                       ? d.phaseMotion
                       : render.phase === 'refining'
                         ? d.phaseRefining(int.format(render.refine * 100))
-                        : d.phaseStill}
+                        : render.smoothing > 0 && render.smoothing < 1
+                          ? d.phaseSmoothing(int.format(render.smoothing * 100))
+                          : d.phaseStill}
                   </Row>
                   <Row label={d.motionDiv}>{num.format(quality.motionDiv)}</Row>
                 </>

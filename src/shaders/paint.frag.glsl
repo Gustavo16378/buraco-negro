@@ -38,7 +38,30 @@ void main() {
     // Pixel da cache que cobre este pixel da tela.
     ivec2 texel = ivec2(gl_FragCoord.xy * uCacheScale);
     vec4 first = texelFetch(uCacheFirst, texel, 0);
-    vec3 col = cachedDisk(first, texelFetch(uCacheSecond, texel, 0)) + texelFetch(uCacheSky, texel, 0).rgb;
+    DiskLight d = cachedDiskLight(first, texelFetch(uCacheSecond, texel, 0));
+    vec3 col = d.color + texelFetch(uCacheSky, texel, 0).rgb;
+
+    // Imagem parada suavizada: média do raio central com as amostras extras do
+    // pixel (trace.frag.glsl), que dão o anel de fótons contínuo, a borda da
+    // sombra lisa e as estrelas como pontos. Das extras vem a soma do céu e da
+    // parte fixa da luz do disco; o gás que gira entra pelo fator do raio
+    // central, de cada cruzamento.
+    // Aproximações: numa amostra que cai em outra imagem do disco que a do
+    // raio central (só na borda delas), o fator do gás é o do outro ponto, o
+    // que só muda o brilho entre 0,5 e 1,3 vezes; e, durante os 0,8 s da troca
+    // de modo, a mistura é linear entre as luzes dos dois modos, em vez de
+    // ser calculada com o g intermediário.
+    if (uAccOn > 0.5) {
+      vec4 a0 = texelFetch(uAcc0, texel, 0);
+      if (a0.a > 0.0) {
+        vec4 a1 = texelFetch(uAcc1, texel, 0);
+        vec4 a2 = texelFetch(uAcc2, texel, 0);
+        vec4 a3 = texelFetch(uAcc3, texel, 0);
+        vec3 s1 = mix(a1.rgb, a2.rgb, uRealismo);
+        vec3 s2 = mix(vec3(a1.a, a2.a, a3.a), a3.rgb, uRealismo);
+        col = (col + a0.rgb + d.gas1 * s1 + d.gas2 * s2) / (1.0 + a0.a);
+      }
+    }
     // No modo de depuração a sombra sai com alfa 0, como no renderizador direto.
     bool captured = first.w > 0.5;
     color = vec4(col, (uDebug > 0.5 && captured) ? 0.0 : 1.0);

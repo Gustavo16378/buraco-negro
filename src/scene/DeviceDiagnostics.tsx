@@ -76,6 +76,7 @@ export function DeviceDiagnostics() {
         tracesPerSecond: (sceneShared.traces - traces.current) / elapsed.current,
         phase: sceneShared.phase,
         refine: sceneShared.refine,
+        smoothing: sceneShared.smoothing,
         times: sceneShared.frameTimer?.latest() ?? null,
       })
       traces.current = sceneShared.traces

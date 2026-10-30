@@ -74,6 +74,8 @@ export type RenderInfo = {
   /** Só no com cache: fase do traçado e quanto da imagem parada já foi traçado (0 a 1). */
   phase: TracePhase | null
   refine: number
+  /** Só no com cache: quanto da suavização da imagem parada já foi feito (0 a 1). */
+  smoothing: number
   /** Tempo de cada parte do quadro na última amostra, em ms (frameTimer.ts). */
   times: FrameTimes | null
 }

@@ -1,9 +1,14 @@
 import {
+  AddEquation,
+  Color,
+  CustomBlending,
   HalfFloatType,
   MathUtils,
   Matrix4,
   Mesh,
   NearestFilter,
+  NoBlending,
+  OneFactor,
   PlaneGeometry,
   Quaternion,
   Scene,
@@ -75,16 +80,24 @@ export type TraceCache = {
   rows: number
 }
 
-export function createTraceCache(): TraceCache {
-  const target = new WebGLRenderTarget(1, 1, {
-    count: 3,
+/**
+ * Render target com as 4 saídas do trace.frag.glsl, para a cache (a 4ª fica
+ * sem uso) e para a soma da suavização. Sempre 4: no Windows o ANGLE compila
+ * o shader de novo para cada formato de saída.
+ */
+export function createTraceTarget() {
+  return new WebGLRenderTarget(1, 1, {
+    count: 4,
     type: HalfFloatType,
     minFilter: NearestFilter,
     magFilter: NearestFilter,
     generateMipmaps: false,
     depthBuffer: false,
   })
-  return { target, view: createView(), active: false, rows: 0 }
+}
+
+export function createTraceCache(): TraceCache {
+  return { target: createTraceTarget(), view: createView(), active: false, rows: 0 }
 }
 
 export const isComplete = (cache: TraceCache) => cache.active && cache.rows >= cache.target.height
@@ -100,6 +113,12 @@ export function restartCache(cache: TraceCache, camera: PerspectiveCamera, steps
 /** Material e cena de um quad com o shader do traçado, para todas as caches. */
 export function createTracer(uniforms: BlackHoleUniforms) {
   const material = createBlackHoleMaterial(traceShader, uniforms)
+  // Mistura aditiva (só nas passadas de suavização, veja drawRows).
+  material.blendSrc = OneFactor
+  material.blendDst = OneFactor
+  material.blendEquation = AddEquation
+  material.blendSrcAlpha = OneFactor
+  material.blendDstAlpha = OneFactor
   const quad = new Mesh(new PlaneGeometry(2, 2), material)
   quad.frustumCulled = false
   const scene = new Scene()
@@ -117,10 +136,46 @@ export function createTracer(uniforms: BlackHoleUniforms) {
 export type Tracer = ReturnType<typeof createTracer>
 
 /**
- * Traça as linhas da cache de `cache.rows` até `until`, com a vista dela. As
- * outras linhas ficam como estão (scissor). O quad cobre a tela inteira, então
- * as derivadas de tela do céu saem iguais às de um traçado de uma vez só.
+ * Desenha o traçado nas linhas [from, until) de `target`, com a vista dada.
+ * As outras linhas ficam como estão (scissor). O quad cobre a tela inteira,
+ * então as derivadas de tela do céu saem iguais às de um traçado de uma vez.
+ * Com `jitter` (em pixels), é uma passada de suavização: o raio sai deslocado
+ * dentro do pixel e o resultado é somado ao que já está em `target`.
  */
+function drawRows(
+  renderer: WebGLRenderer,
+  tracer: Tracer,
+  target: WebGLRenderTarget,
+  view: TraceView,
+  uniforms: BlackHoleUniforms,
+  camera: Camera,
+  from: number,
+  until: number,
+  jitter: readonly [number, number] | null,
+) {
+  uniforms.uCamPos.value.copy(view.position)
+  uniforms.uCamMatrix.value.copy(view.matrix)
+  uniforms.uFov.value = MathUtils.degToRad(view.fov)
+  uniforms.uAspect.value = view.aspect
+  uniforms.uMaxSteps.value = view.steps
+  uniforms.uPixelScale.value = target.height / Math.max(1, renderer.domElement.clientHeight)
+  uniforms.uAccumulate.value = jitter ? 1 : 0
+  // Pixel em coordenadas de tela (-1 a 1): 2 / largura e 2 / altura.
+  uniforms.uJitter.value.set(jitter ? (2 * jitter[0]) / target.width : 0, jitter ? (2 * jitter[1]) / target.height : 0)
+  tracer.material.blending = jitter ? CustomBlending : NoBlending
+  target.scissor.set(0, from, target.width, until - from)
+  target.scissorTest = true
+  const previous = renderer.getRenderTarget()
+  renderer.setRenderTarget(target)
+  renderer.render(tracer.scene, camera)
+  renderer.setRenderTarget(previous)
+  target.scissorTest = false
+  tracer.material.blending = NoBlending
+  uniforms.uAccumulate.value = 0
+  uniforms.uJitter.value.set(0, 0)
+}
+
+/** Traça as linhas da cache de `cache.rows` até `until`, com a vista dela. */
 export function traceRows(
   renderer: WebGLRenderer,
   tracer: Tracer,
@@ -129,21 +184,62 @@ export function traceRows(
   camera: Camera,
   until: number,
 ) {
-  const { target, view } = cache
-  uniforms.uCamPos.value.copy(view.position)
-  uniforms.uCamMatrix.value.copy(view.matrix)
-  uniforms.uFov.value = MathUtils.degToRad(view.fov)
-  uniforms.uAspect.value = view.aspect
-  uniforms.uMaxSteps.value = view.steps
-  uniforms.uPixelScale.value = target.height / Math.max(1, renderer.domElement.clientHeight)
-  target.scissor.set(0, cache.rows, target.width, until - cache.rows)
-  target.scissorTest = true
-  const previous = renderer.getRenderTarget()
-  renderer.setRenderTarget(target)
-  renderer.render(tracer.scene, camera)
-  renderer.setRenderTarget(previous)
-  target.scissorTest = false
+  drawRows(renderer, tracer, cache.target, cache.view, uniforms, camera, cache.rows, until, null)
   cache.rows = until
+}
+
+/**
+ * Suavização da imagem parada: a soma das amostras extras de cada pixel, com
+ * o raio deslocado dentro do pixel (trace.frag.glsl). Amostras inteiras, uma
+ * depois da outra, cada uma traçada em faixas como a imagem parada.
+ */
+export type Accumulation = {
+  target: WebGLRenderTarget
+  /** Amostras completas. */
+  samples: number
+  /** Linhas já traçadas da amostra em andamento. */
+  rows: number
+  active: boolean
+}
+
+export function createAccumulation(): Accumulation {
+  return { target: createTraceTarget(), samples: 0, rows: 0, active: false }
+}
+
+/** Zera a soma para a imagem parada `still` (do mesmo tamanho dela). */
+export function restartAccumulation(renderer: WebGLRenderer, acc: Accumulation, still: TraceCache) {
+  const { width, height } = still.target
+  if (acc.target.width !== width || acc.target.height !== height) acc.target.setSize(width, height)
+  const previous = renderer.getRenderTarget()
+  const clearColor = renderer.getClearColor(new Color())
+  const clearAlpha = renderer.getClearAlpha()
+  renderer.setRenderTarget(acc.target)
+  renderer.setClearColor(0x000000, 0)
+  renderer.clear(true, false, false)
+  renderer.setClearColor(clearColor, clearAlpha)
+  renderer.setRenderTarget(previous)
+  acc.samples = 0
+  acc.rows = 0
+  acc.active = true
+}
+
+/** Soma as linhas da amostra em andamento até `until`, com o deslocamento `jitter` (pixels). */
+export function accumulateRows(
+  renderer: WebGLRenderer,
+  tracer: Tracer,
+  acc: Accumulation,
+  still: TraceCache,
+  uniforms: BlackHoleUniforms,
+  camera: Camera,
+  until: number,
+  jitter: readonly [number, number],
+) {
+  drawRows(renderer, tracer, acc.target, still.view, uniforms, camera, acc.rows, until, jitter)
+  acc.rows = until
+  if (acc.rows >= acc.target.height) {
+    acc.samples++
+    acc.rows = 0
+  }
 }
 
 /** O traçado guardado na cache, para a sonda refazer o raio na CPU. */

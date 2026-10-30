@@ -144,10 +144,21 @@ float diskAlpha(float r) {
 // já aplicado: temperatura observada T_obs = g · T e brilho proporcional a
 // T_obs⁴ (lei de Stefan-Boltzmann), relativo ao pico, o que já inclui o
 // fator g⁴ do SPEC: (g · T)⁴ = g⁴ · T⁴.
-vec3 diskEmission(float r, float gas, float g) {
+// Separada em duas partes: a fixa (cor e brilho pela temperatura) e o fator
+// do gás, que varia com o tempo. A suavização da imagem parada soma só a
+// parte fixa de várias amostras (veja trace.frag.glsl).
+vec3 diskEmissionStatic(float r, float g) {
   float tObs = g * diskTemperature(r);
   float tr = tObs / uTemp;
-  return blackbody(tObs) * (tr * tr * tr * tr) * DISK_EMISSION * mix(0.5, 1.3, gas);
+  return blackbody(tObs) * (tr * tr * tr * tr) * DISK_EMISSION;
+}
+
+float gasFactor(float gas) {
+  return mix(0.5, 1.3, gas);
+}
+
+vec3 diskEmission(float r, float gas, float g) {
+  return diskEmissionStatic(r, g) * gasFactor(gas);
 }
 
 // Uma amostra do disco no ponto p do plano, à distância r do centro, vista

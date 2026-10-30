@@ -45,25 +45,40 @@ float cachedGas(vec4 uv, vec4 dx, vec4 dy) {
   return gasBlend(n0, n1, gasCopies());
 }
 
+// Luz do disco no texel da cache e o fator do gás de cada cruzamento
+// (gasFactor; 0,9, o do gás médio, quando não há cruzamento), que a
+// suavização da imagem parada aplica às outras amostras do pixel.
+struct DiskLight {
+  vec3 color;
+  float gas1;
+  float gas2;
+};
+
 // Luz do disco (linear, HDR) no texel da cache: os dois cruzamentos da frente
 // para trás, o 1º cobrindo o 2º conforme a opacidade dele, com o desvio de
 // frequência do modo atual. Usa derivadas de tela (o filtro do gás): só pode
 // ser chamada fora de if e de laço.
-vec3 cachedDisk(vec4 first, vec4 second) {
+DiskLight cachedDiskLight(vec4 first, vec4 second) {
   vec4 uv1 = gasCoords(first.x, first.y);
   vec4 uv2 = gasCoords(second.x, second.y);
   vec4 dx1 = gasGrad(dFdx(uv1)), dy1 = gasGrad(dFdy(uv1));
   vec4 dx2 = gasGrad(dFdx(uv2)), dy2 = gasGrad(dFdy(uv2));
 
-  vec3 disk = vec3(0.0);
+  DiskLight d = DiskLight(vec3(0.0), gasFactor(0.5), gasFactor(0.5));
   float front = 0.0;
   if (first.x > 0.0) {
     front = diskAlpha(first.x);
-    disk += front * diskEmission(first.x, cachedGas(uv1, dx1, dy1), mix(1.0, first.z, uRealismo));
+    d.gas1 = gasFactor(cachedGas(uv1, dx1, dy1));
+    d.color += front * diskEmissionStatic(first.x, mix(1.0, first.z, uRealismo)) * d.gas1;
   }
   if (second.x > 0.0) {
     float a = diskAlpha(second.x);
-    disk += (1.0 - front) * a * diskEmission(second.x, cachedGas(uv2, dx2, dy2), mix(1.0, second.z, uRealismo));
+    d.gas2 = gasFactor(cachedGas(uv2, dx2, dy2));
+    d.color += (1.0 - front) * a * diskEmissionStatic(second.x, mix(1.0, second.z, uRealismo)) * d.gas2;
   }
-  return disk;
+  return d;
+}
+
+vec3 cachedDisk(vec4 first, vec4 second) {
+  return cachedDiskLight(first, second).color;
 }

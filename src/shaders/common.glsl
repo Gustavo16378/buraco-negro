@@ -48,6 +48,17 @@ uniform sampler2D uBloom;
 uniform float uBloomIntensity;
 uniform float uBloomThreshold;
 uniform float uBloomSmoothing;
+// Suavização da imagem parada (BlackHoleCached.tsx): uAccumulate = 1 nas
+// passadas extras do traçado, com o raio deslocado de uJitter dentro do pixel
+// (em coordenadas de tela, -1 a 1); uAcc0 a uAcc3 guardam a soma delas, que a
+// pintura usa quando uAccOn = 1.
+uniform float uAccumulate;
+uniform vec2 uJitter;
+uniform sampler2D uAcc0;
+uniform sampler2D uAcc1;
+uniform sampler2D uAcc2;
+uniform sampler2D uAcc3;
+uniform float uAccOn;
 // Sempre 0. Com LOOPED_SKY (?lacos na URL), é somado ao limite dos laços do
 // céu e do fbm, para o compilador não conseguir prever quantas voltas eles
 // dão. O compilador de shaders do Direct3D, que o Chrome usa no Windows,

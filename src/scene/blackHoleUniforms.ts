@@ -61,6 +61,13 @@ export function createBlackHoleUniforms() {
     uLowColor: { value: null as Texture | null },
     uPaintSize: { value: new Vector2(1, 1) },
     uFinal: { value: 0 },
+    uAccumulate: { value: 0 },
+    uJitter: { value: new Vector2() },
+    uAcc0: { value: null as Texture | null },
+    uAcc1: { value: null as Texture | null },
+    uAcc2: { value: null as Texture | null },
+    uAcc3: { value: null as Texture | null },
+    uAccOn: { value: 0 },
     uBloom: { value: null as Texture | null },
     uBloomIntensity: { value: BLOOM.intensity },
     uBloomThreshold: { value: BLOOM.threshold },
@@ -98,6 +105,15 @@ export function bindCache(u: BlackHoleUniforms, cache: WebGLRenderTarget | null,
   u.uCacheSecond.value = cache?.textures[2] ?? null
   u.uLowColor.value = lowColor
   u.uUpsample.value = lowColor ? 1 : 0
+}
+
+/** Liga (ou desliga, com null) a soma da suavização da imagem parada à pintura. */
+export function bindAccumulation(u: BlackHoleUniforms, acc: WebGLRenderTarget | null) {
+  u.uAcc0.value = acc?.textures[0] ?? null
+  u.uAcc1.value = acc?.textures[1] ?? null
+  u.uAcc2.value = acc?.textures[2] ?? null
+  u.uAcc3.value = acc?.textures[3] ?? null
+  u.uAccOn.value = acc ? 1 : 0
 }
 
 /**

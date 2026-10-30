@@ -74,6 +74,7 @@ export const en: Dict = {
     phaseMotion: 'moving',
     phaseRefining: (pct: string) => `refining, ${pct}%`,
     phaseStill: 'still image',
+    phaseSmoothing: (pct: string) => `still, smoothing, ${pct}%`,
     motionDiv: 'motion divisor',
     timing: 'time per frame part',
     timingNote: 'sampled every 1 s, waiting for the GPU between parts',

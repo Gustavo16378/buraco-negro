@@ -3,7 +3,14 @@ import { useEffect, useMemo, useRef } from 'react'
 import { HalfFloatType, LinearFilter, Mesh, PerspectiveCamera, PlaneGeometry, Scene, Vector2, WebGLRenderTarget } from 'three'
 import { DEBUG } from '../debug.ts'
 import { IS_MOBILE, useStore } from '../state/store.ts'
-import { bindCache, createBlackHoleUniforms, setFinalPass, setPaintTarget, useAnimatedUniforms } from './blackHoleUniforms.ts'
+import {
+  bindAccumulation,
+  bindCache,
+  createBlackHoleUniforms,
+  setFinalPass,
+  setPaintTarget,
+  useAnimatedUniforms,
+} from './blackHoleUniforms.ts'
 import { createBloom } from './bloom.ts'
 import { MAX_STEPS, createCachedQuality, initialLevels, nextRefineRows, type FrameKind } from './cachedQuality.ts'
 import { remainingGlide } from './cameraDamping.ts'
@@ -14,13 +21,16 @@ import { createBlackHoleMaterial, paintShader } from './shaderSource.ts'
 import { attachShadowMeasure } from './shadowMeasure.ts'
 import { sceneShared } from './shared.ts'
 import {
+  accumulateRows,
   cacheSnapshot,
   captureView,
+  createAccumulation,
   createTraceCache,
   createTracer,
   createView,
   isComplete,
   readCacheProbe,
+  restartAccumulation,
   restartCache,
   traceRows,
   viewShift,
@@ -48,6 +58,23 @@ const STILL_DRIFT_PX = 3
 const REFINE_BUDGET = 1 / (IS_MOBILE ? 30 : 50)
 const REFINE_OVER_BASE = 1.3
 const INITIAL_REFINE_ROWS = 8
+// Suavização da imagem parada (trace.frag.glsl): deslocamentos do raio dentro
+// do pixel, em pixels, das amostras extras (sequência de Halton de bases 2 e
+// 3, que espalha os pontos por igual sem formar grade). O raio central já é a
+// amostra (0, 0).
+const JITTER: ReadonlyArray<readonly [number, number]> = [
+  [0, -1 / 6],
+  [-1 / 4, 1 / 6],
+  [1 / 4, -7 / 18],
+  [-3 / 8, -1 / 18],
+  [1 / 8, 5 / 18],
+  [-1 / 8, -5 / 18],
+  [3 / 8, 1 / 18],
+  [-7 / 16, 7 / 18],
+]
+// Acima disso (pixels da imagem parada), sem suavização: as 4 texturas da
+// soma passariam de ~80 MB.
+const ACC_MAX_PIXELS = 2.5e6
 
 function createRenderState(
   uniforms: ReturnType<typeof createBlackHoleUniforms>,
@@ -74,10 +101,12 @@ function createRenderState(
   const gas = createGasFields(uniforms, Math.min(8, maxAnisotropy))
   // Bloom: no celular a fonte em 1/4 da tela e 3 níveis; no desktop, 1/2 e 4.
   const bloom = IS_MOBILE ? createBloom(uniforms, 0.25, 3) : createBloom(uniforms, 0.5, 4)
+  const acc = createAccumulation()
   return {
     tracer,
     motion,
     still,
+    acc,
     low,
     lowScene,
     gas,
@@ -100,6 +129,7 @@ function createRenderState(
       tracer.dispose()
       motion.target.dispose()
       still.target.dispose()
+      acc.target.dispose()
       low.dispose()
       lowQuad.geometry.dispose()
       gas.dispose()
@@ -219,6 +249,8 @@ export function BlackHoleCached() {
     ) {
       still.active = false
     }
+    const { acc } = s
+    if (!still.active) acc.active = false
 
     if (!isComplete(still)) {
       const mw = Math.max(1, Math.round(width / q.motionDiv))
@@ -240,6 +272,12 @@ export function BlackHoleCached() {
         if (isComplete(still)) sceneShared.traces++
         kind = 'refine'
       }
+    } else if (settled && acc.samples < JITTER.length && still.target.width * still.target.height <= ACC_MAX_PIXELS) {
+      // Imagem parada pronta e câmera assentada: soma as amostras extras do
+      // pixel, uma de cada vez, em faixas como a imagem parada.
+      if (!acc.active) restartAccumulation(gl, acc, still)
+      accumulateRows(gl, s.tracer, acc, still, uniforms, camera, Math.min(height, acc.rows + s.rows), JITTER[acc.samples])
+      kind = 'refine'
     }
     s.lastKind = kind
     timer?.mark('trace')
@@ -249,6 +287,7 @@ export function BlackHoleCached() {
     const shown = isComplete(still) ? still : motion
     s.shown = shown
     bindCache(uniforms, shown.target)
+    bindAccumulation(uniforms, shown === still && acc.active ? acc.target : null)
     if (shown === motion) {
       const { low } = s
       if (low.width !== motion.target.width || low.height !== motion.target.height) {
@@ -265,6 +304,7 @@ export function BlackHoleCached() {
 
     sceneShared.phase = shown === still ? 'still' : still.active ? 'refining' : 'motion'
     sceneShared.refine = still.active ? Math.min(1, still.rows / still.target.height) : 0
+    sceneShared.smoothing = shown === still && acc.active ? acc.samples / JITTER.length : 0
 
     // Primeiro quadro com tudo compilado. No Windows, o ANGLE (que traduz o
     // WebGL para Direct3D) ainda compila o traçado de novo no primeiro desenho
