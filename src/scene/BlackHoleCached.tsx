@@ -5,6 +5,7 @@ import { DEBUG } from '../debug.ts'
 import { IS_MOBILE, useStore } from '../state/store.ts'
 import { bindCache, createBlackHoleUniforms, setPaintTarget, useAnimatedUniforms } from './blackHoleUniforms.ts'
 import { MAX_STEPS, createCachedQuality, initialLevels, nextRefineRows, type FrameKind } from './cachedQuality.ts'
+import { remainingGlide } from './cameraDamping.ts'
 import { compileFor } from './compile.ts'
 import { createGasFields } from './gasFields.ts'
 import { readTexel } from './gpuReadback.ts'
@@ -29,18 +30,22 @@ import {
 // A cache em movimento é refeita quando a imagem anda mais que isso (em
 // pixels da própria cache) desde o traçado dela.
 const RETRACE_PX = 0.25
-// A câmera assentou quando anda menos que isso por quadro: a imagem parada
-// começa a ser traçada. O amortecimento do OrbitControls deixa a câmera
-// escorregando por vários segundos depois que o dedo solta; a cada quadro
-// ela anda 94% do anterior, então daqui em diante escorrega no máximo
-// 0,15 · 0,94 / 0,06 ≈ 2,4 pixels, menos que STILL_DRIFT_PX.
-const SETTLE_PX = 0.15
+// A câmera assentou quando o que ela ainda vai escorregar fica abaixo disso:
+// a imagem parada começa a ser traçada. Depois que o dedo solta, o
+// amortecimento deixa a câmera escorregando, cada vez mais devagar
+// (cameraDamping.ts); o resto do caminho é a velocidade dividida pelo ritmo
+// de queda, o mesmo em qualquer fps.
+const SETTLE_PX = 2
 // A imagem parada vale até a câmera se afastar isso dela. Enquanto isso ela
 // fica congelada e a câmera ainda escorrega por baixo; na troca da imagem em
-// movimento (borrada) pela parada, o salto fica em ~2 pixels.
+// movimento (borrada) pela parada, o salto fica em até SETTLE_PX.
 const STILL_DRIFT_PX = 3
-// Tempo por quadro desejado enquanto a imagem parada é refinada.
+// Tempo por quadro desejado enquanto a imagem parada é refinada: o maior entre
+// este e o tempo normal de um quadro do aparelho mais 30% (num aparelho que já
+// leva mais que isso sem refino, a meta fixa faria as faixas encolherem até o
+// mínimo e a imagem nítida demoraria muito).
 const REFINE_BUDGET = 1 / (IS_MOBILE ? 30 : 50)
+const REFINE_OVER_BASE = 1.3
 const INITIAL_REFINE_ROWS = 8
 
 function createRenderState(uniforms: ReturnType<typeof createBlackHoleUniforms>, material: ReturnType<typeof createBlackHoleMaterial>) {
@@ -76,6 +81,8 @@ function createRenderState(uniforms: ReturnType<typeof createBlackHoleUniforms>,
     /** A cache em exibição. */
     shown: null as TraceCache | null,
     lastKind: 'idle' as FrameKind,
+    /** Tempo médio dos quadros sem refino, em segundos. */
+    baseFrame: 1 / 60,
     /** Linhas da imagem parada traçadas por quadro (ajustado pelo tempo dos quadros). */
     rows: INITIAL_REFINE_ROWS,
     /** Shaders compilados (sem travar a página) e primeira imagem pronta. */
@@ -167,14 +174,21 @@ export function BlackHoleCached() {
     // Qualidade: o tempo deste quadro mede o trabalho do quadro anterior.
     const store = useStore.getState()
     const q = store.quality
-    if (s.lastKind === 'refine') s.rows = Math.min(4096, nextRefineRows(s.rows, delta, REFINE_BUDGET))
+    if (s.lastKind === 'refine') {
+      const budget = Math.max(REFINE_BUDGET, s.baseFrame * REFINE_OVER_BASE)
+      s.rows = Math.min(4096, nextRefineRows(s.rows, delta, budget))
+    } else if (delta < 0.25) {
+      s.baseFrame += (delta - s.baseFrame) * 0.1
+    }
     const next = s.quality.frame(s.lastKind, delta, q)
     if (next) store.setQuality(next)
 
     gl.getDrawingBufferSize(size)
     const width = size.x
     const height = size.y
-    const moved = s.hasPrevious ? viewShift(s.previous, camera, height) : 0
+    // Quanto a câmera ainda vai escorregar, pela velocidade deste quadro.
+    const glide = s.hasPrevious && delta > 0 ? remainingGlide(viewShift(s.previous, camera, height) / delta) : 0
+    const settled = glide <= SETTLE_PX
     captureView(s.previous, camera, q.steps)
     s.hasPrevious = true
 
@@ -203,8 +217,8 @@ export function BlackHoleCached() {
         sceneShared.traces++
         // Só conta como movimento se a câmera andou: refazer por troca de
         // qualidade ou de tamanho não mede o custo do movimento.
-        kind = moved > SETTLE_PX ? 'motion' : 'refine'
-      } else if (moved <= SETTLE_PX) {
+        kind = settled ? 'refine' : 'motion'
+      } else if (settled) {
         if (!still.active) restartCache(still, camera, MAX_STEPS, width, height)
         traceRows(gl, s.tracer, still, uniforms, camera, Math.min(height, still.rows + s.rows))
         if (isComplete(still)) sceneShared.traces++
