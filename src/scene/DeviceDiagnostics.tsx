@@ -10,6 +10,7 @@ import { selfTestExpected } from './skySelfTest.ts'
 // comparado com a CPU, e a resolução interna contra a da tela física.
 
 const RENDER_EVERY = 1 // s
+const FPS_EVERY = 0.5 // s
 
 function precision(gl: WebGL2RenderingContext, type: number): PrecisionFormat {
   const f = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, type)
@@ -22,10 +23,21 @@ export function DeviceDiagnostics() {
   const done = useRef(false)
   const elapsed = useRef(RENDER_EVERY)
   const traces = useRef(sceneShared.traces)
+  const frames = useRef({ count: 0, elapsed: 0 })
 
   // Prioridade 0,5: depois do BlackHole, que deixa os uniforms do quadro prontos.
   useFrame((_, delta) => {
     const store = useStore.getState()
+
+    // fps, medido a cada meio segundo.
+    const f = frames.current
+    f.count++
+    f.elapsed += delta
+    if (f.elapsed >= FPS_EVERY) {
+      store.setFps(f.count / f.elapsed)
+      f.count = 0
+      f.elapsed = 0
+    }
 
     elapsed.current += delta
     if (elapsed.current >= RENDER_EVERY) {
@@ -42,6 +54,8 @@ export function DeviceDiagnostics() {
         traceWidth: snapshot?.width ?? 0,
         traceHeight: snapshot?.height ?? 0,
         tracesPerSecond: (sceneShared.traces - traces.current) / elapsed.current,
+        phase: sceneShared.phase,
+        refine: sceneShared.refine,
       })
       traces.current = sceneShared.traces
       elapsed.current = 0

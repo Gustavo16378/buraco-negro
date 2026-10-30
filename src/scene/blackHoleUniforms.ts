@@ -13,6 +13,7 @@ import {
 } from 'three'
 import { DEBUG } from '../debug.ts'
 import { DISK_IN, DISK_OUT, DISK_TEMP, TIME_SCALE } from '../physics/constants.ts'
+import type { TraceOptions } from '../physics/trace.ts'
 import { useStore } from '../state/store.ts'
 import type { TraceSnapshot } from './shared.ts'
 import { SELF_TEST_HASH_INPUT, SELF_TEST_POINT } from './skySelfTest.ts'
@@ -53,6 +54,9 @@ export function createBlackHoleUniforms() {
     uGas0: { value: null as Texture | null },
     uGas1: { value: null as Texture | null },
     uGasSeed: { value: 0 },
+    uUpsample: { value: 0 },
+    uLowColor: { value: null as Texture | null },
+    uPaintSize: { value: new Vector2(1, 1) },
   }
 }
 
@@ -75,24 +79,43 @@ export function copyTraceInputs(u: BlackHoleUniforms, camera: Camera, steps: num
   u.uMaxSteps.value = steps
 }
 
-/** Liga (ou desliga, com null) as texturas da cache do traçado à pintura. */
-export function bindCache(u: BlackHoleUniforms, cache: WebGLRenderTarget | null) {
+/**
+ * Liga (ou desliga, com null) as texturas da cache do traçado à pintura. Com
+ * lowColor, o quad da tela só amplia essa pintura já feita na resolução da
+ * cache (em movimento); sem ele, pinta direto da cache.
+ */
+export function bindCache(u: BlackHoleUniforms, cache: WebGLRenderTarget | null, lowColor: Texture | null = null) {
   u.uCacheSky.value = cache?.textures[0] ?? null
   u.uCacheFirst.value = cache?.textures[1] ?? null
   u.uCacheSecond.value = cache?.textures[2] ?? null
+  u.uLowColor.value = lowColor
+  u.uUpsample.value = lowColor ? 1 : 0
 }
 
 /**
- * Proporção entre a cache e o destino em que a pintura está desenhando
- * agora (a render target do pós-processamento ou a tela), para cada pixel
- * pegar o texel da cache que o cobre.
+ * Tamanho do destino em que a pintura está desenhando agora (a render target
+ * do pós-processamento, a da pintura reduzida ou a tela) e a proporção entre
+ * a cache ligada e ele, para cada pixel pegar o texel da cache que o cobre.
  */
-export function setCacheScale(u: BlackHoleUniforms, cache: WebGLRenderTarget, renderer: WebGLRenderer) {
+export function setPaintTarget(u: BlackHoleUniforms, renderer: WebGLRenderer) {
   const out = renderer.getRenderTarget()
   const gl = renderer.getContext()
   const width = out ? out.width : gl.drawingBufferWidth
   const height = out ? out.height : gl.drawingBufferHeight
-  u.uCacheScale.value.set(cache.width / width, cache.height / height)
+  u.uPaintSize.value.set(width, height)
+  const cache = u.uCacheSky.value?.image as { width: number; height: number } | undefined
+  if (cache) u.uCacheScale.value.set(cache.width / width, cache.height / height)
+}
+
+/** Opções do traçado para a sonda refazer o raio na CPU, com o modo em uso agora. */
+export function traceOptions(u: BlackHoleUniforms, steps: number): TraceOptions {
+  return {
+    maxSteps: steps,
+    realism: u.uRealismo.value,
+    diskIn: u.uDiskIn.value,
+    diskOut: u.uDiskOut.value,
+    temp: u.uTemp.value,
+  }
 }
 
 /**
@@ -105,13 +128,7 @@ export function traceSnapshot(u: BlackHoleUniforms, width: number, height: numbe
     camera: { position: [p.x, p.y, p.z], matrix: u.uCamMatrix.value.elements, fov: u.uFov.value, aspect: u.uAspect.value },
     width,
     height,
-    options: {
-      maxSteps: u.uMaxSteps.value,
-      realism: u.uRealismo.value,
-      diskIn: u.uDiskIn.value,
-      diskOut: u.uDiskOut.value,
-      temp: u.uTemp.value,
-    },
+    options: traceOptions(u, u.uMaxSteps.value),
   }
 }
 

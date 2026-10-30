@@ -87,6 +87,18 @@ export function DebugPanel() {
                 {render.traceWidth}×{render.traceHeight}
               </Row>
               <Row label={d.tracesPerSecond}>{int.format(render.tracesPerSecond)}</Row>
+              {render.phase && (
+                <>
+                  <Row label={d.phase}>
+                    {render.phase === 'motion'
+                      ? d.phaseMotion
+                      : render.phase === 'refining'
+                        ? d.phaseRefining(int.format(render.refine * 100))
+                        : d.phaseStill}
+                  </Row>
+                  <Row label={d.motionDiv}>{num.format(quality.motionDiv)}</Row>
+                </>
+              )}
             </>
           )}
         </Section>

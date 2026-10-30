@@ -19,6 +19,9 @@ export type ProbeSource = {
 
 export type RendererKind = 'legacy' | 'cached'
 
+/** Renderizador com cache: em movimento, refinando a imagem parada, ou com ela na tela. */
+export type TracePhase = 'motion' | 'refining' | 'still'
+
 /**
  * Ponte entre o renderizador em uso e o resto da cena (sonda, diagnóstico),
  * sem passar pelo React. O renderizador preenche ao montar.
@@ -30,4 +33,7 @@ export const sceneShared: {
   probe: ProbeSource | null
   /** Quantos traçados completos da tela já foram feitos (o direto traça um por quadro). */
   traces: number
-} = { renderer: null, selfTestMaterial: null, probe: null, traces: 0 }
+  /** Só no com cache: fase do traçado e quanto da imagem parada já foi traçado (0 a 1). */
+  phase: TracePhase | null
+  refine: number
+} = { renderer: null, selfTestMaterial: null, probe: null, traces: 0, phase: null, refine: 0 }

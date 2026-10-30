@@ -8,7 +8,6 @@ import { CameraRig } from './scene/CameraRig.tsx'
 import { Effects } from './scene/Effects.tsx'
 import { DeviceDiagnostics } from './scene/DeviceDiagnostics.tsx'
 import { ProbeTracer } from './scene/ProbeTracer.tsx'
-import { Quality } from './scene/Quality.tsx'
 import { useStore } from './state/store.ts'
 import { DebugPanel } from './ui/DebugPanel.tsx'
 import { LangToggle } from './ui/LangToggle.tsx'
@@ -59,7 +58,6 @@ export default function App() {
         <BlackHole />
         <CameraRig />
         <Effects />
-        <Quality />
         <ProbeTracer />
         {DEBUG && <DeviceDiagnostics />}
       </Canvas>

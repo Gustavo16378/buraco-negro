@@ -36,6 +36,11 @@ uniform vec2 uCacheScale;
 uniform sampler2D uGas0;
 uniform sampler2D uGas1;
 uniform float uGasSeed;
+// Em movimento: 1 quando a pintura só amplia uLowColor (a pintura feita na
+// resolução da cache) para a tela; uPaintSize é o tamanho do destino.
+uniform float uUpsample;
+uniform sampler2D uLowColor;
+uniform vec2 uPaintSize;
 
 in vec2 vUv;
 

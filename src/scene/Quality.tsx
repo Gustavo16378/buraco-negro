@@ -1,25 +1,16 @@
 import { PerformanceMonitor } from '@react-three/drei'
-import { useFrame } from '@react-three/fiber'
 import { useRef } from 'react'
-import { DEBUG } from '../debug.ts'
 import { IS_MOBILE, useStore, type Quality as QualityState } from '../state/store.ts'
+import { DPR_STEP, MAX_DPR, MAX_STEPS, MIN_DPR, MIN_STEPS, STEPS_STEP, fpsBounds } from './cachedQuality.ts'
 
-// Limites do SPEC (seção 6).
-const MIN_DPR = 0.5
-const MAX_DPR = 1.5
-const DPR_STEP = 0.25
-const MIN_STEPS = 120
-const MAX_STEPS = 300
-const STEPS_STEP = 40
+// Ajuste de qualidade do renderizador direto (?legacy). O com cache tem o
+// dele, em cachedQuality.ts.
 
 // Quantas vezes a qualidade pode trocar de sentido (subir depois de descer ou
 // o contrário) antes de parar de se ajustar.
 const MAX_REVERSALS = 3
 
-// Faixas de fps: abaixo da primeira a qualidade cai, acima da segunda ela sobe.
-// Meta do SPEC: 60 fps no desktop e 30 ou mais no celular.
-const bounds = (refreshrate: number): [number, number] =>
-  IS_MOBILE ? [28, Math.min(50, refreshrate * 0.9)] : [50, Math.min(100, refreshrate) * 0.95]
+const bounds = (refreshrate: number) => fpsBounds(IS_MOBILE, refreshrate)
 
 // Desempenho ruim: baixa primeiro o dpr e só depois os passos.
 function lower(q: QualityState): QualityState {
@@ -35,20 +26,6 @@ function raise(q: QualityState): QualityState {
 
 export function Quality() {
   const adjust = useRef({ last: null as 'up' | 'down' | null, reversals: 0, locked: false })
-  const frames = useRef({ count: 0, elapsed: 0 })
-
-  // fps para o painel de depuração, medido a cada meio segundo.
-  useFrame((_, delta) => {
-    if (!DEBUG) return
-    const f = frames.current
-    f.count++
-    f.elapsed += delta
-    if (f.elapsed >= 0.5) {
-      useStore.getState().setFps(f.count / f.elapsed)
-      f.count = 0
-      f.elapsed = 0
-    }
-  })
 
   // O PerformanceMonitor do drei conta toda mudança como "flipflop", e um
   // aparelho lento precisa de vários degraus seguidos para baixo. Por isso o

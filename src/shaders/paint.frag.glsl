@@ -24,7 +24,16 @@ float cachedGas(float r, float phi) {
 }
 
 void main() {
-  // Pixel da cache que cobre este pixel da tela (a cache pode ser menor).
+  // Em movimento a cache é menor que a tela. A pintura roda antes na
+  // resolução dela (numa render target à parte, com uUpsample = 0) e aqui só
+  // amplia o resultado com filtro bilinear, como o navegador ampliava o canvas
+  // no renderizador direto. Sem isso, cada texel da cache sairia como um bloco.
+  if (uUpsample > 0.5) {
+    fragColor = linearToOutputTexel(texture(uLowColor, gl_FragCoord.xy / uPaintSize));
+    return;
+  }
+
+  // Pixel da cache que cobre este pixel da tela.
   ivec2 texel = ivec2(gl_FragCoord.xy * uCacheScale);
   vec4 skyRec = texelFetch(uCacheSky, texel, 0);
   vec4 first = texelFetch(uCacheFirst, texel, 0);

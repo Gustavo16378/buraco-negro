@@ -2,6 +2,8 @@ import { MathUtils } from 'three'
 import { create } from 'zustand'
 import type { ProbeReading } from '../physics/probe.ts'
 import type { Destination } from '../physics/trace.ts'
+import type { Levels } from '../scene/cachedQuality.ts'
+import type { TracePhase } from '../scene/shared.ts'
 
 /** Interstellar: disco simétrico, sem desvio de cor. Física real: Doppler e desvio gravitacional. */
 export type Mode = 'interstellar' | 'real'
@@ -68,19 +70,29 @@ export type RenderInfo = {
   traceHeight: number
   /** Traçados completos da tela por segundo (no direto, um por quadro). */
   tracesPerSecond: number
+  /** Só no com cache: fase do traçado e quanto da imagem parada já foi traçado (0 a 1). */
+  phase: TracePhase | null
+  refine: number
 }
 
 /** Resolução de renderização (dpr) e passos de integração por raio. */
-export type Quality = { dpr: number; steps: number }
+/**
+ * dpr do canvas, passos por raio e divisor por eixo da resolução do traçado em
+ * movimento. No renderizador com cache, steps vale só para o movimento (a
+ * imagem parada usa sempre o máximo) e quem ajusta é cachedQuality.ts; no
+ * direto, motionDiv não é usado e quem ajusta é Quality.tsx.
+ */
+export type Quality = Levels
 
 /** Celular ou tablet: a tela de toque é o ponteiro principal. */
 export const IS_MOBILE = window.matchMedia('(pointer: coarse)').matches
 
-// SPEC 6: o celular começa com dpr 0,75 e 160 passos; o desktop, no dpr da
-// tela (limitado a 0,5 a 1,5) e 300 passos. O PerformanceMonitor ajusta depois.
+// SPEC 6, renderizador direto: o celular começa com dpr 0,75 e 160 passos; o
+// desktop, no dpr da tela (limitado a 0,5 a 1,5) e 300 passos. O com cache
+// troca pelo ponto de partida dele ao montar (initialLevels).
 const initialQuality: Quality = IS_MOBILE
-  ? { dpr: 0.75, steps: 160 }
-  : { dpr: MathUtils.clamp(window.devicePixelRatio || 1, 0.5, 1.5), steps: 300 }
+  ? { dpr: 0.75, steps: 160, motionDiv: 3 }
+  : { dpr: MathUtils.clamp(window.devicePixelRatio || 1, 0.5, 1.5), steps: 300, motionDiv: 1.5 }
 
 type State = {
   lang: Lang
