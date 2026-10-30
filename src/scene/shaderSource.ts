@@ -3,6 +3,7 @@
 // para o renderizador direto (?legacy) e o com cache nunca divergirem.
 
 import { GLSL3, ShaderMaterial } from 'three'
+import { LOOPED_SKY } from '../debug.ts'
 import { shaderDefines } from '../physics/constants.ts'
 import common from '../shaders/common.glsl?raw'
 import disk from '../shaders/disk.glsl?raw'
@@ -39,7 +40,8 @@ export const gasShader = [common, disk, gasMain].join('\n')
 export function createBlackHoleMaterial(fragmentShader: string, uniforms: BlackHoleUniforms) {
   return new ShaderMaterial({
     glslVersion: GLSL3,
-    defines: shaderDefines,
+    // ?lacos: céu com laços de verdade (veja common.glsl).
+    defines: LOOPED_SKY ? { ...shaderDefines, LOOPED_SKY: '' } : shaderDefines,
     vertexShader,
     fragmentShader,
     uniforms,

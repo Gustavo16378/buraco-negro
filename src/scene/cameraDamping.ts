@@ -14,7 +14,10 @@ export const DAMPING_RATE = -60 * Math.log(1 - DAMPING_AT_60) // ≈ 3,71 por se
 
 /** Fração do giro que falta a aplicar num quadro de dt segundos. */
 export function dampingFactor(dt: number) {
-  return 1 - Math.exp(-DAMPING_RATE * Math.max(0, dt))
+  // Um intervalo inválido (NaN) viraria um fator NaN, e o OrbitControls
+  // multiplicaria o giro por ele: a câmera ficaria em NaN para sempre.
+  if (!(dt > 0)) return 0
+  return 1 - Math.exp(-DAMPING_RATE * dt)
 }
 
 /**

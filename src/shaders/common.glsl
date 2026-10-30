@@ -41,14 +41,21 @@ uniform float uGasSeed;
 uniform float uUpsample;
 uniform sampler2D uLowColor;
 uniform vec2 uPaintSize;
-// Sempre 0. Somado ao limite dos laços do céu e do fbm, para o compilador não
-// conseguir prever quantas voltas eles dão. O compilador de shaders do
-// Direct3D, que o Chrome usa no Windows, desenrola todo laço de limite
-// constante e copia o corpo de cada função em cada chamada: com as 6 camadas
-// de estrelas e os fbm do céu, o traçado levava ~4 s para compilar na
-// primeira visita (e o ANGLE compila duas vezes, veja BlackHoleCached.tsx). Com os
-// laços de verdade, ~1,6 s. O resultado não muda.
+// Sempre 0. Com LOOPED_SKY (?lacos na URL), é somado ao limite dos laços do
+// céu e do fbm, para o compilador não conseguir prever quantas voltas eles
+// dão. O compilador de shaders do Direct3D, que o Chrome usa no Windows,
+// desenrola todo laço de limite constante e copia o corpo de cada função em
+// cada chamada: com as 6 camadas de estrelas e os fbm do céu, o traçado
+// levava ~4 s para compilar na primeira visita (e o ANGLE compila duas vezes,
+// veja BlackHoleCached.tsx). Com os laços de verdade, ~1,6 s, e o resultado
+// não muda no desktop. Mas num Android (Mali-G52) a imagem ficou preta com
+// essa versão, então ela só entra com ?lacos até sabermos o motivo.
 uniform int uNoUnroll;
+#ifdef LOOPED_SKY
+#define NO_UNROLL + uNoUnroll
+#else
+#define NO_UNROLL
+#endif
 // Pixels do traçado por pixel CSS, para o tamanho das estrelas (sky.glsl). O
 // renderizador direto deixa 1: as estrelas ficam do tamanho de um pixel do
 // render, como até a Etapa 5.1.
@@ -87,7 +94,7 @@ float noise3(vec3 p) {
 // Soma de oitavas de noise3, normalizada para ficar em [0, 1].
 float fbm(vec3 p, int octaves) {
   float sum = 0.0, amp = 0.5, norm = 0.0;
-  for (int i = 0; i < octaves + uNoUnroll; i++) {
+  for (int i = 0; i < octaves NO_UNROLL; i++) {
     sum += amp * noise3(p);
     norm += amp;
     p = p * 2.03 + 17.1;
