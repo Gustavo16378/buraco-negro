@@ -2,6 +2,7 @@ import {
   ClampToEdgeWrapping,
   HalfFloatType,
   LinearFilter,
+  LinearMipmapLinearFilter,
   Mesh,
   PlaneGeometry,
   RedFormat,
@@ -33,23 +34,26 @@ type Field = { target: WebGLRenderTarget; seed: number | null; rows: number }
  * ser preciso. Quando uma cópia reinicia, o campo pronto entra no lugar e o
  * velho passa a receber o seguinte.
  */
-export function createGasFields(uniforms: BlackHoleUniforms) {
+export function createGasFields(uniforms: BlackHoleUniforms, anisotropy: number) {
   const material = createBlackHoleMaterial(gasShader, uniforms)
   const quad = new Mesh(new PlaneGeometry(2, 2), material)
   quad.frustumCulled = false
   const scene = new Scene()
   scene.add(quad)
-  // float16 de um canal; filtro linear (ruído entre amostras), o ângulo dá a
-  // volta (RepeatWrapping) e o raio para nas bordas do disco.
+  // float16 de um canal; o ângulo dá a volta (RepeatWrapping) e o raio para
+  // nas bordas do disco. Com mipmaps e filtro anisotrópico: a pintura lê o
+  // gás com a área que o pixel cobre no disco (cacheDisk.glsl). O three refaz
+  // os mipmaps depois de cada faixa desenhada no campo.
   const fields: Field[] = Array.from({ length: 3 }, () => ({
     target: new WebGLRenderTarget(GAS_R, GAS_PHI, {
       type: HalfFloatType,
       format: RedFormat,
-      minFilter: LinearFilter,
+      minFilter: LinearMipmapLinearFilter,
       magFilter: LinearFilter,
       wrapS: ClampToEdgeWrapping,
       wrapT: RepeatWrapping,
-      generateMipmaps: false,
+      generateMipmaps: true,
+      anisotropy,
       depthBuffer: false,
     }),
     seed: null,

@@ -49,7 +49,11 @@ const REFINE_BUDGET = 1 / (IS_MOBILE ? 30 : 50)
 const REFINE_OVER_BASE = 1.3
 const INITIAL_REFINE_ROWS = 8
 
-function createRenderState(uniforms: ReturnType<typeof createBlackHoleUniforms>, material: ReturnType<typeof createBlackHoleMaterial>) {
+function createRenderState(
+  uniforms: ReturnType<typeof createBlackHoleUniforms>,
+  material: ReturnType<typeof createBlackHoleMaterial>,
+  maxAnisotropy: number,
+) {
   const tracer = createTracer(uniforms)
   const motion = createTraceCache()
   const still = createTraceCache()
@@ -67,7 +71,7 @@ function createRenderState(uniforms: ReturnType<typeof createBlackHoleUniforms>,
   lowQuad.onBeforeRender = (renderer) => setPaintTarget(uniforms, renderer)
   const lowScene = new Scene()
   lowScene.add(lowQuad)
-  const gas = createGasFields(uniforms)
+  const gas = createGasFields(uniforms, Math.min(8, maxAnisotropy))
   // Bloom: no celular a fonte em 1/4 da tela e 3 níveis; no desktop, 1/2 e 4.
   const bloom = IS_MOBILE ? createBloom(uniforms, 0.25, 3) : createBloom(uniforms, 0.5, 4)
   return {
@@ -124,7 +128,7 @@ export function BlackHoleCached() {
   useAnimatedUniforms(uniforms)
 
   useEffect(() => {
-    const s = createRenderState(uniforms, material)
+    const s = createRenderState(uniforms, material, gl.capabilities.getMaxAnisotropy())
     state.current = s
     useStore.getState().setQuality(initialLevels(IS_MOBILE, window.devicePixelRatio || 1))
 
