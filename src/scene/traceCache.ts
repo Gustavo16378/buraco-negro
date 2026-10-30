@@ -135,6 +135,7 @@ export function traceRows(
   uniforms.uFov.value = MathUtils.degToRad(view.fov)
   uniforms.uAspect.value = view.aspect
   uniforms.uMaxSteps.value = view.steps
+  uniforms.uPixelScale.value = target.height / Math.max(1, renderer.domElement.clientHeight)
   target.scissor.set(0, cache.rows, target.width, until - cache.rows)
   target.scissorTest = true
   const previous = renderer.getRenderTarget()

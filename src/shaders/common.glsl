@@ -49,6 +49,10 @@ uniform vec2 uPaintSize;
 // primeira visita (e o ANGLE compila duas vezes, veja BlackHoleCached.tsx). Com os
 // laços de verdade, ~1,6 s. O resultado não muda.
 uniform int uNoUnroll;
+// Pixels do traçado por pixel CSS, para o tamanho das estrelas (sky.glsl). O
+// renderizador direto deixa 1: as estrelas ficam do tamanho de um pixel do
+// render, como até a Etapa 5.1.
+uniform float uPixelScale;
 
 in vec2 vUv;
 

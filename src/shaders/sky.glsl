@@ -98,8 +98,9 @@ vec3 starColor(float t) {
 }
 
 // Parâmetros de uma camada de estrelas. Os tamanhos são em "pixels de
-// referência" (o tamanho angular de um pixel no centro da tela), para as
-// estrelas terem o mesmo tamanho na tela em qualquer resolução.
+// referência" (o tamanho angular de um pixel CSS no centro da tela; veja
+// pixelFootprint), para as estrelas terem o mesmo tamanho na tela em qualquer
+// resolução do traçado.
 struct Stars {
   float cells;  // células por aresta de cada face do cubo
   vec3 density; // chance de uma célula ter estrela (acima de 1 = todas têm), ver density()
@@ -113,7 +114,7 @@ struct Stars {
 // Como um pixel se relaciona com as direções do céu.
 struct Pixel {
   float size; // tamanho angular do pixel nesta direção
-  float ref;  // tamanho angular do pixel no centro da tela
+  float ref;  // tamanho angular do pixel de referência no centro da tela
   vec3 ux;    // dot(ux, delta): deslocamento angular `delta` convertido em pixels, eixo x
   vec3 uy;    // idem, eixo y
 };
@@ -125,7 +126,10 @@ Pixel pixelFootprint(vec3 d) {
   float det = max(a * c - b * b, 1e-24);
   Pixel p;
   p.size = sqrt(max(a, c));
-  p.ref = tan(uFov * 0.5) * abs(dFdy(vUv.y));
+  // Pixel do traçado no centro da tela, vezes quantos pixels do traçado cabem
+  // num pixel CSS (uPixelScale): as estrelas ficam do mesmo tamanho na tela
+  // com qualquer dpr e também na cache em movimento, que é menor.
+  p.ref = tan(uFov * 0.5) * abs(dFdy(vUv.y)) * uPixelScale;
   // Base dual de (ex, ey): dot(ux, ex) = 1 e dot(ux, ey) = 0, e o contrário para uy.
   p.ux = (c * ex - b * ey) / det;
   p.uy = (a * ey - b * ex) / det;

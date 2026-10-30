@@ -1,7 +1,7 @@
 import { Canvas } from '@react-three/fiber'
 import { useEffect, useSyncExternalStore } from 'react'
-import { MathUtils } from 'three'
 import { DEBUG } from './debug.ts'
+import { CAM_INCL, LANDSCAPE_DIST } from './physics/framing.ts'
 import { useT } from './i18n/index.ts'
 import { BlackHole } from './scene/BlackHole.tsx'
 import { CameraRig } from './scene/CameraRig.tsx'
@@ -16,9 +16,9 @@ import { ModeToggle } from './ui/ModeToggle.tsx'
 import { ProbeMarker } from './ui/ProbeMarker.tsx'
 import { ProbePanel } from './ui/ProbePanel.tsx'
 
-// Posição final da chegada (SPEC 1): ~22 r_s, ~8° acima do plano do disco.
-const CAM_DIST = 22
-const CAM_INCL = MathUtils.degToRad(8)
+// Posição final da chegada (SPEC 1): 8° acima do plano do disco. A distância
+// e o campo de visão saem da proporção da tela (CameraRig.tsx).
+const CAM_DIST = LANDSCAPE_DIST
 
 function subscribeVisibility(onChange: () => void) {
   document.addEventListener('visibilitychange', onChange)
