@@ -1,6 +1,7 @@
 import { useFrame, useThree } from '@react-three/fiber'
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { useStore, type PrecisionFormat } from '../state/store.ts'
+import { createFrameTimer } from './frameTimer.ts'
 import { createShaderPass } from './gpuReadback.ts'
 import { sceneShared } from './shared.ts'
 import { selfTestExpected } from './skySelfTest.ts'
@@ -24,6 +25,25 @@ export function DeviceDiagnostics() {
   const elapsed = useRef(RENDER_EVERY)
   const traces = useRef(sceneShared.traces)
   const frames = useRef({ count: 0, elapsed: 0 })
+
+  // Tempo de cada parte do quadro (frameTimer.ts). O começo vem antes de
+  // tudo (-3); o renderizador marca gás, traçado e pintura reduzida; antes do
+  // pós-processamento (0,95) fecha o que sobrou (controles, sonda, este
+  // diagnóstico) e depois dele (2) fecha o pós-processamento e o quadro.
+  useEffect(() => {
+    const timer = createFrameTimer(renderer)
+    sceneShared.frameTimer = timer
+    return () => {
+      timer.dispose()
+      sceneShared.frameTimer = null
+    }
+  }, [renderer])
+  useFrame((_, delta) => sceneShared.frameTimer?.begin(delta), -3)
+  useFrame(() => sceneShared.frameTimer?.mark('other'), 0.95)
+  useFrame(() => {
+    sceneShared.frameTimer?.mark('post')
+    sceneShared.frameTimer?.end()
+  }, 2)
 
   // Prioridade 0,5: depois do BlackHole, que deixa os uniforms do quadro prontos.
   useFrame((_, delta) => {
@@ -56,6 +76,7 @@ export function DeviceDiagnostics() {
         tracesPerSecond: (sceneShared.traces - traces.current) / elapsed.current,
         phase: sceneShared.phase,
         refine: sceneShared.refine,
+        times: sceneShared.frameTimer?.latest() ?? null,
       })
       traces.current = sceneShared.traces
       elapsed.current = 0

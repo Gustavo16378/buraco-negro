@@ -3,6 +3,7 @@ import { create } from 'zustand'
 import type { ProbeReading } from '../physics/probe.ts'
 import type { Destination } from '../physics/trace.ts'
 import type { Levels } from '../scene/cachedQuality.ts'
+import type { FrameTimes } from '../scene/frameTimer.ts'
 import type { TracePhase } from '../scene/shared.ts'
 
 /** Interstellar: disco simétrico, sem desvio de cor. Física real: Doppler e desvio gravitacional. */
@@ -73,6 +74,8 @@ export type RenderInfo = {
   /** Só no com cache: fase do traçado e quanto da imagem parada já foi traçado (0 a 1). */
   phase: TracePhase | null
   refine: number
+  /** Tempo de cada parte do quadro na última amostra, em ms (frameTimer.ts). */
+  times: FrameTimes | null
 }
 
 /** Resolução de renderização (dpr) e passos de integração por raio. */

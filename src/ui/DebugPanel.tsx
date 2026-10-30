@@ -38,6 +38,7 @@ export function DebugPanel() {
   const num = new Intl.NumberFormat(t.locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   const int = new Intl.NumberFormat(t.locale, { maximumFractionDigits: 0 })
   const fine = new Intl.NumberFormat(t.locale, { minimumFractionDigits: 5, maximumFractionDigits: 5 })
+  const ms = new Intl.NumberFormat(t.locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 })
 
   const diff = shadow ? (shadow.measuredDeg / shadow.expectedDeg - 1) * 100 : 0
   const ok = Math.abs(diff) < TOLERANCE
@@ -102,6 +103,22 @@ export function DebugPanel() {
             </>
           )}
         </Section>
+
+        {render?.times && (
+          <Section title={d.timing}>
+            <dd className="col-span-2 text-ink/60">{d.timingNote}</dd>
+            <Row label={d.partOther}>{ms.format(render.times.other)} ms</Row>
+            {render.renderer === 'cached' && (
+              <>
+                <Row label={d.partGas}>{ms.format(render.times.gas)} ms</Row>
+                <Row label={d.partTrace}>{ms.format(render.times.trace)} ms</Row>
+                <Row label={d.partLow}>{ms.format(render.times.low)} ms</Row>
+              </>
+            )}
+            <Row label={render.renderer === 'cached' ? d.partPost : d.partPostLegacy}>{ms.format(render.times.post)} ms</Row>
+            <Row label={d.partTotal}>{ms.format(render.times.total)} ms</Row>
+          </Section>
+        )}
 
         {device && (
           <Section title={d.device}>

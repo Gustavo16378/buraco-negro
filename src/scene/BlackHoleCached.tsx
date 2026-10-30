@@ -169,7 +169,11 @@ export function BlackHoleCached() {
   useFrame(({ camera }, delta) => {
     const s = state.current
     if (!s || !s.compiled || !(camera instanceof PerspectiveCamera)) return
+    // ?debug: tempo de cada parte do quadro (frameTimer.ts).
+    const timer = sceneShared.frameTimer
+    timer?.mark('other')
     s.gas.update(gl, camera)
+    timer?.mark('gas')
 
     // Qualidade: o tempo deste quadro mede o trabalho do quadro anterior.
     const store = useStore.getState()
@@ -226,6 +230,7 @@ export function BlackHoleCached() {
       }
     }
     s.lastKind = kind
+    timer?.mark('trace')
 
     // A cache em exibição. Em movimento a pintura roda na resolução dela e o
     // quad da tela só amplia o resultado.
@@ -242,6 +247,7 @@ export function BlackHoleCached() {
       gl.render(s.lowScene, camera)
       gl.setRenderTarget(previous)
       bindCache(uniforms, shown.target, low.texture)
+      timer?.mark('low')
     }
 
     sceneShared.phase = shown === still ? 'still' : still.active ? 'refining' : 'motion'

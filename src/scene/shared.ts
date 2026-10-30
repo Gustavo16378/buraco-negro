@@ -1,4 +1,5 @@
 import type { ShaderMaterial } from 'three'
+import type { FrameTimer } from './frameTimer.ts'
 import type { TraceOptions, CameraState } from '../physics/trace.ts'
 import type { GpuProbe } from '../state/store.ts'
 
@@ -36,4 +37,6 @@ export const sceneShared: {
   /** Só no com cache: fase do traçado e quanto da imagem parada já foi traçado (0 a 1). */
   phase: TracePhase | null
   refine: number
-} = { renderer: null, selfTestMaterial: null, probe: null, traces: 0, phase: null, refine: 0 }
+  /** ?debug: medida do tempo de cada parte do quadro. */
+  frameTimer: FrameTimer | null
+} = { renderer: null, selfTestMaterial: null, probe: null, traces: 0, phase: null, refine: 0, frameTimer: null }
