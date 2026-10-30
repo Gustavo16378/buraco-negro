@@ -1,6 +1,7 @@
 // Traçado de um raio na CPU, cópia fiel do que o shader faz em cada pixel
-// (blackhole.frag.glsl), em float64. Qualquer mudança no traçado do shader
-// tem que ser repetida aqui; as constantes já vêm do mesmo lugar.
+// (raytrace.glsl e o laço de trace.frag.glsl e legacy.frag.glsl), em float64.
+// Qualquer mudança no traçado do shader tem que ser repetida aqui; as
+// constantes já vêm do mesmo lugar.
 
 import {
   DISK_IN,

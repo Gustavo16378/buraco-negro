@@ -1,5 +1,5 @@
 // Autoteste do céu (?debug): cópia em JavaScript do hash, do ruído e do fbm
-// do shader (blackhole.frag.glsl), para conferir se a GPU do aparelho calcula
+// do shader (common.glsl), para conferir se a GPU do aparelho calcula
 // igual. Se o hash inteiro sair diferente, estrelas e Via Láctea saem erradas.
 
 /** Entrada fixa do hash (uvec3) e ponto fixo do ruído, os mesmos que vão ao shader como uniforms. */

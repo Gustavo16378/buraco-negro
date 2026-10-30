@@ -56,6 +56,35 @@ export function createPixelReader(renderer: WebGLRenderer): PixelReader | null {
   }
 }
 
+const texel32 = new Float32Array(4)
+const texel16 = new Uint16Array(4)
+
+/**
+ * Lê um texel (rgba) de uma das texturas de uma render target em ponto
+ * flutuante. Tenta em float32 (o WebGL2 aceita RGBA/FLOAT em qualquer
+ * superfície de ponto flutuante) e, se o aparelho recusar, em float16.
+ * Devolve null se as duas leituras foram recusadas, em vez de valores errados.
+ */
+export function readTexel(renderer: WebGLRenderer, target: WebGLRenderTarget, index: number, x: number, y: number) {
+  const gl = renderer.getContext() as WebGL2RenderingContext
+  const previous = renderer.getRenderTarget()
+  renderer.setRenderTarget(target)
+  // Limpa erros pendentes de outras partes, para o teste abaixo valer só para a leitura.
+  for (let i = 0; i < 8 && gl.getError() !== gl.NO_ERROR; i++);
+  const multiple = target.textures.length > 1
+  if (multiple) gl.readBuffer(gl.COLOR_ATTACHMENT0 + index)
+  gl.readPixels(x, y, 1, 1, gl.RGBA, gl.FLOAT, texel32)
+  let ok = gl.getError() === gl.NO_ERROR
+  if (!ok) {
+    gl.readPixels(x, y, 1, 1, gl.RGBA, gl.HALF_FLOAT, texel16)
+    ok = gl.getError() === gl.NO_ERROR
+    for (let i = 0; i < 4; i++) texel32[i] = DataUtils.fromHalfFloat(texel16[i])
+  }
+  if (multiple) gl.readBuffer(gl.COLOR_ATTACHMENT0)
+  renderer.setRenderTarget(previous)
+  return ok ? Float32Array.from(texel32) : null
+}
+
 /**
  * Passada de um pixel só com o material do buraco negro, num modo de
  * verificação do shader (uProbe: 1 = sonda de raio, 2 = autoteste do céu).

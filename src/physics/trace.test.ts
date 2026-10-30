@@ -1,7 +1,7 @@
 // Testes numéricos do integrador na CPU (SPEC 3.1). Rodar com `npm test`.
 
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { test } from 'node:test'
 import { B_C, ISCO_PERIOD, MASSES, shaderDefines } from './constants.ts'
 import {
@@ -176,7 +176,11 @@ test('o desvio do raio traçado bate com a integral exata da órbita (diferença
 })
 
 test('o shader usa as constantes compartilhadas e não redefine nenhuma', () => {
-  const shader = readFileSync(new URL('../shaders/blackhole.frag.glsl', import.meta.url), 'utf8')
+  const dir = new URL('../shaders/', import.meta.url)
+  const shader = readdirSync(dir)
+    .filter((f) => f.endsWith('.glsl'))
+    .map((f) => readFileSync(new URL(f, dir), 'utf8'))
+    .join('\n')
   for (const name of Object.keys(shaderDefines)) {
     assert.ok(new RegExp(`\\b${name}\\b`).test(shader), `${name} não aparece no shader`)
     assert.ok(!new RegExp(`(const|#define)\\s+(float\\s+|int\\s+)?${name}\\b`).test(shader), `${name} redefinida no shader`)

@@ -21,6 +21,7 @@ export function DeviceDiagnostics() {
   const camera = useThree((s) => s.camera)
   const done = useRef(false)
   const elapsed = useRef(RENDER_EVERY)
+  const traces = useRef(sceneShared.traces)
 
   // Prioridade 0,5: depois do BlackHole, que deixa os uniforms do quadro prontos.
   useFrame((_, delta) => {
@@ -28,20 +29,26 @@ export function DeviceDiagnostics() {
 
     elapsed.current += delta
     if (elapsed.current >= RENDER_EVERY) {
-      elapsed.current = 0
       const canvas = renderer.domElement
       const dpr = window.devicePixelRatio || 1
+      const snapshot = sceneShared.probe?.snapshot()
       store.setRender({
         width: canvas.width,
         height: canvas.height,
         physicalWidth: Math.round(canvas.clientWidth * dpr),
         physicalHeight: Math.round(canvas.clientHeight * dpr),
         devicePixelRatio: dpr,
+        renderer: sceneShared.renderer,
+        traceWidth: snapshot?.width ?? 0,
+        traceHeight: snapshot?.height ?? 0,
+        tracesPerSecond: (sceneShared.traces - traces.current) / elapsed.current,
       })
+      traces.current = sceneShared.traces
+      elapsed.current = 0
     }
 
     // Uma vez só, assim que o material existe.
-    const material = sceneShared.material
+    const material = sceneShared.selfTestMaterial
     if (done.current || !material) return
     done.current = true
 

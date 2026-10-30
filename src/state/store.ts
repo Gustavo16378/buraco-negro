@@ -55,7 +55,20 @@ export type DeviceInfo = {
 }
 
 /** Resolução interna de renderização e da tela física, para o ?debug. */
-export type RenderInfo = { width: number; height: number; physicalWidth: number; physicalHeight: number; devicePixelRatio: number }
+export type RenderInfo = {
+  width: number
+  height: number
+  physicalWidth: number
+  physicalHeight: number
+  devicePixelRatio: number
+  /** Renderizador em uso: direto (?legacy) ou com cache. */
+  renderer: 'legacy' | 'cached' | null
+  /** Resolução do traçado em exibição (no com cache, a da cache). */
+  traceWidth: number
+  traceHeight: number
+  /** Traçados completos da tela por segundo (no direto, um por quadro). */
+  tracesPerSecond: number
+}
 
 /** Resolução de renderização (dpr) e passos de integração por raio. */
 export type Quality = { dpr: number; steps: number }

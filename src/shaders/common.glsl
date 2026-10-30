@@ -1,0 +1,74 @@
+// Buraco negro de Schwarzschild (sem rotação), unidades geométricas com
+// r_s = 1. Este arquivo abre todos os shaders do buraco negro: uniforms,
+// constantes e o ruído. Os outros pedaços (raytrace, sky, disk) e um main
+// (legacy, trace, paint, gas) são concatenados depois dele em
+// src/scene/shaderSource.ts.
+//
+// ESCAPE_R, DT_FACTOR, MIN_DT, MAX_DT, MAX_LOOP_STEPS, OPACITY_STOP,
+// DISK_FADE_IN, DISK_FADE_OUT e T_PROFILE_PEAK chegam como #define, vindos de
+// src/physics/constants.ts: são as mesmas que o integrador na CPU usa.
+
+uniform vec3 uCamPos;    // posição da câmera, em r_s
+uniform mat4 uCamMatrix; // matrixWorld da câmera
+uniform float uFov;      // campo de visão vertical, em radianos
+uniform float uAspect;   // largura / altura
+uniform int uMaxSteps;   // limite de passos da integração por raio
+uniform float uDebug;    // 1 com ?debug na URL: alfa 0 nos pixels da sombra, para medir
+uniform float uDiskIn;   // raio interno do disco (ISCO = 3)
+uniform float uDiskOut;  // raio externo do disco
+uniform float uTemp;     // temperatura de pico do disco, em kelvin
+uniform float uTime;     // tempo da simulação, em unidades de r_s / c
+uniform float uRealismo; // 0 = modo Interstellar (sem desvio de frequência), 1 = Física real
+uniform float uProbe;    // ?debug: 1 na verificação da sonda de raio, 2 no autoteste do céu
+uniform vec2 uProbeUv;   // pixel da sonda, em coordenadas de tela de -1 a 1 (como vUv)
+uniform uvec3 uSelfTestHash; // entrada fixa do hash no autoteste (a mesma da CPU)
+uniform vec3 uSelfTestPoint; // ponto fixo do ruído no autoteste (o mesmo da CPU)
+
+// Renderizador com cache: o que o traçado gravou (ver trace.frag.glsl) e a
+// proporção entre o tamanho da cache e o da tela em que a pintura desenha.
+uniform sampler2D uCacheSky;
+uniform sampler2D uCacheFirst;
+uniform sampler2D uCacheSecond;
+uniform vec2 uCacheScale;
+
+in vec2 vUv;
+
+const float PI = 3.14159265359;
+const float INV_UINT_MAX = 1.0 / 4294967295.0;
+
+// Hash inteiro PCG3D (Jarzynski e Olano, 2020).
+uvec3 pcg3d(uvec3 v) {
+  v = v * 1664525u + 1013904223u;
+  v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
+  v ^= v >> 16u;
+  v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
+  return v;
+}
+
+float hash31(uvec3 p) {
+  return float(pcg3d(p).x) * INV_UINT_MAX;
+}
+
+// Value noise 3D em [0, 1]. O deslocamento de 4096 mantém a grade positiva
+// para a conversão em uint.
+float noise3(vec3 p) {
+  uvec3 i = uvec3(floor(p) + 4096.0);
+  vec3 f = fract(p);
+  vec3 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(hash31(i),                  hash31(i + uvec3(1u, 0u, 0u)), u.x),
+                 mix(hash31(i + uvec3(0u, 1u, 0u)), hash31(i + uvec3(1u, 1u, 0u)), u.x), u.y),
+             mix(mix(hash31(i + uvec3(0u, 0u, 1u)), hash31(i + uvec3(1u, 0u, 1u)), u.x),
+                 mix(hash31(i + uvec3(0u, 1u, 1u)), hash31(i + uvec3(1u, 1u, 1u)), u.x), u.y), u.z);
+}
+
+// Soma de oitavas de noise3, normalizada para ficar em [0, 1].
+float fbm(vec3 p, int octaves) {
+  float sum = 0.0, amp = 0.5, norm = 0.0;
+  for (int i = 0; i < octaves; i++) {
+    sum += amp * noise3(p);
+    norm += amp;
+    p = p * 2.03 + 17.1;
+    amp *= 0.5;
+  }
+  return sum / norm;
+}

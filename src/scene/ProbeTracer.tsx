@@ -1,11 +1,9 @@
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useRef } from 'react'
-import { MathUtils, Matrix4, Vector2, Vector3 } from 'three'
+import { MathUtils } from 'three'
 import { DEBUG } from '../debug.ts'
-import { pixelUv, readProbe } from '../physics/probe.ts'
-import type { Destination } from '../physics/trace.ts'
-import { useStore, type GpuProbe } from '../state/store.ts'
-import { createShaderPass, type ShaderPass } from './gpuReadback.ts'
+import { readProbe } from '../physics/probe.ts'
+import { useStore } from '../state/store.ts'
 import { sceneShared } from './shared.ts'
 
 // Um toque vira sonda se o dedo (ou o mouse) andar menos que isso e soltar
@@ -15,11 +13,8 @@ const TAP_TIME = 300 // ms
 // O painel é atualizado no máximo 10 vezes por segundo.
 const UPDATE_EVERY = 0.1 // s
 
-const DESTINATIONS: Destination[] = ['sky', 'horizon', 'disk']
-
 export function ProbeTracer() {
   const gl = useThree((s) => s.gl)
-  const camera = useThree((s) => s.camera)
   const elapsed = useRef(UPDATE_EVERY)
 
   // Toque curto cria a sonda; arraste e pinça continuam com o OrbitControls.
@@ -78,26 +73,13 @@ export function ProbeTracer() {
     return () => window.removeEventListener('keydown', key)
   }, [])
 
-  // Passada de verificação (?debug): o mesmo material desenha só o pixel da
-  // sonda, em ponto flutuante de 32 bits ou, se o aparelho não deixa, de 16.
-  const verify = useRef<ShaderPass | null>(null)
-  useEffect(() => {
-    if (!DEBUG) return
-    const pass = createShaderPass(gl)
-    verify.current = pass
-    return () => {
-      pass?.dispose()
-      verify.current = null
-    }
-  }, [gl])
-
-  // Prioridade 0,5: roda depois do BlackHole (0), que atualiza os uniforms do
+  // Prioridade 0,5: roda depois do BlackHole (0), que atualiza o traçado do
   // quadro, e antes do pós-processamento (1), que desenha a tela. Assim o
-  // raio da CPU e o da GPU usam exatamente as mesmas entradas.
+  // raio da CPU usa exatamente as entradas do traçado em exibição.
   useFrame((_, delta) => {
     const point = useStore.getState().probe
-    const material = sceneShared.material
-    if (!point || !material) {
+    const snapshot = sceneShared.probe?.snapshot()
+    if (!point || !snapshot) {
       elapsed.current = UPDATE_EVERY // uma sonda nova aparece já no quadro seguinte
       return
     }
@@ -105,44 +87,16 @@ export function ProbeTracer() {
     if (elapsed.current < UPDATE_EVERY) return
     elapsed.current = 0
 
-    // Pixel do drawing buffer sob o ponto, com origem embaixo (como no shader).
+    // Pixel do traçado sob o ponto, com origem embaixo (como no shader). O
+    // traçado pode ter resolução diferente da tela.
     const canvas = gl.domElement
-    const width = canvas.width
-    const height = canvas.height
+    const { width, height } = snapshot
     const px = MathUtils.clamp(Math.floor((point.x * width) / canvas.clientWidth), 0, width - 1)
     const py = MathUtils.clamp(height - 1 - Math.floor((point.y * height) / canvas.clientHeight), 0, height - 1)
 
-    const u = material.uniforms
-    const pos = u.uCamPos.value as Vector3
-    const reading = readProbe(
-      {
-        position: [pos.x, pos.y, pos.z],
-        matrix: (u.uCamMatrix.value as Matrix4).elements,
-        fov: u.uFov.value,
-        aspect: u.uAspect.value,
-      },
-      px,
-      py,
-      width,
-      height,
-      {
-        maxSteps: u.uMaxSteps.value,
-        realism: u.uRealismo.value,
-        diskIn: u.uDiskIn.value,
-        diskOut: u.uDiskOut.value,
-        temp: u.uTemp.value,
-      },
-    )
-
-    let gpu: GpuProbe | null = null
-    const pass = verify.current
-    if (pass) {
-      const [ux, uy] = pixelUv(px, py, width, height)
-      ;(u.uProbeUv.value as Vector2).set(ux, uy)
-      const [dest, r, g, opacity] = pass.run(material, camera, 1)
-      gpu = { destination: DESTINATIONS[Math.round(dest)] ?? 'sky', r, g, opacity }
-    }
-
+    const reading = readProbe(snapshot.camera, px, py, width, height, snapshot.options)
+    // Conferência com o que a GPU calculou para o mesmo pixel (?debug).
+    const gpu = DEBUG ? (sceneShared.probe?.readGpu(px, py) ?? null) : null
     useStore.getState().setProbeResult(reading, gpu)
   }, 0.5)
 

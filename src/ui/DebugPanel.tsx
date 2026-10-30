@@ -82,6 +82,11 @@ export function DebugPanel() {
                 {d.ofScreen(int.format((render.width / render.physicalWidth) * 100))}
               </dd>
               <Row label={d.deviceDpr}>{num.format(render.devicePixelRatio)}</Row>
+              <Row label={d.renderer}>{render.renderer === 'legacy' ? d.rendererLegacy : d.rendererCached}</Row>
+              <Row label={d.trace}>
+                {render.traceWidth}×{render.traceHeight}
+              </Row>
+              <Row label={d.tracesPerSecond}>{int.format(render.tracesPerSecond)}</Row>
             </>
           )}
         </Section>
