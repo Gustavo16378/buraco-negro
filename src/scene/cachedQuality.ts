@@ -38,15 +38,16 @@ export function fpsBounds(mobile: boolean, refresh: number): [number, number] {
 }
 
 /**
- * Ponto de partida. No celular, o canvas a 50% da tela física por eixo e o
- * movimento a 1/3 disso; no desktop, o canvas no dpr da tela e o movimento a
- * 1/1,5. A imagem parada sempre usa MAX_STEPS; `steps` é o do movimento.
+ * Ponto de partida. No celular, o canvas a 75% da tela física por eixo (até
+ * o teto de maxDprFor) e o movimento a 1/3 disso; no desktop, o canvas no dpr
+ * da tela e o movimento a 1/1,5. A imagem parada sempre usa MAX_STEPS;
+ * `steps` é o do movimento.
  */
 export function initialLevels(mobile: boolean, devicePixelRatio: number): Levels {
-  const clampDpr = (x: number) => Math.min(MAX_DPR, Math.max(MIN_DPR, x))
+  const clampDpr = (x: number, max: number) => Math.min(max, Math.max(MIN_DPR, x))
   return mobile
-    ? { dpr: clampDpr(0.5 * devicePixelRatio), steps: 160, motionDiv: 3 }
-    : { dpr: clampDpr(devicePixelRatio), steps: MAX_STEPS, motionDiv: 1.5 }
+    ? { dpr: clampDpr(0.75 * devicePixelRatio, maxDprFor(true, devicePixelRatio)), steps: 160, motionDiv: 3 }
+    : { dpr: clampDpr(devicePixelRatio, MAX_DPR), steps: MAX_STEPS, motionDiv: 1.5 }
 }
 
 // Movimento pesado: primeiro a resolução (em movimento a imagem já sai
@@ -69,8 +70,18 @@ export function lowerStill(q: Levels): Levels {
   return { ...q, dpr: Math.max(MIN_DPR, q.dpr - DPR_STEP) }
 }
 
-export function raiseStill(q: Levels): Levels {
-  return { ...q, dpr: Math.min(MAX_DPR, q.dpr + DPR_STEP) }
+export function raiseStill(q: Levels, maxDpr = MAX_DPR): Levels {
+  return { ...q, dpr: Math.min(maxDpr, q.dpr + DPR_STEP) }
+}
+
+/**
+ * Teto do dpr no celular: a resolução física da tela (até dpr 2). Com o
+ * bloom e o tone mapping numa passada só (Etapa 5.1), parado sobra tempo, e
+ * a imagem parada fica nítida em vez de ampliada pelo navegador. No desktop,
+ * o limite de sempre.
+ */
+export function maxDprFor(mobile: boolean, devicePixelRatio: number) {
+  return mobile ? Math.max(MAX_DPR, Math.min(2, devicePixelRatio)) : MAX_DPR
 }
 
 const same = (a: Levels, b: Levels) => a.dpr === b.dpr && a.steps === b.steps && a.motionDiv === b.motionDiv
@@ -80,7 +91,7 @@ export type FrameKind = 'motion' | 'refine' | 'idle'
 
 type Knob = { last: 'up' | 'down' | null; reversals: number; locked: boolean }
 
-export function createCachedQuality(mobile: boolean) {
+export function createCachedQuality(mobile: boolean, maxDpr = MAX_DPR) {
   const windows = { motion: { frames: 0, time: 0 }, idle: { frames: 0, time: 0 } }
   const knobs: Record<'motion' | 'idle', Knob> = {
     motion: { last: null, reversals: 0, locked: false },
@@ -89,6 +100,10 @@ export function createCachedQuality(mobile: boolean) {
   // Taxa de atualização da tela: o fps mais alto medido sem traçado (esses
   // quadros são baratos e costumam bater no limite da tela).
   let refresh = 60
+  // Teto do dpr imposto pelo movimento (veja abaixo).
+  let ceiling = maxDpr
+  // Medidas de quadros parados terminadas desde a última troca de qualidade.
+  let idleVerdicts = 0
 
   return {
     /**
@@ -104,15 +119,25 @@ export function createCachedQuality(mobile: boolean) {
       const fps = w.frames / w.time
       w.frames = 0
       w.time = 0
-      if (kind === 'idle') refresh = Math.max(refresh, Math.min(240, fps))
+      if (kind === 'idle') {
+        refresh = Math.max(refresh, Math.min(240, fps))
+        idleVerdicts++
+      }
 
       const [low, high] = fpsBounds(mobile, refresh)
       const direction = fps < low ? 'down' : fps > high ? 'up' : null
       if (!direction) return null
-      const next =
+      let next =
         kind === 'motion'
           ? direction === 'down' ? lowerMotion(q) : raiseMotion(q)
-          : direction === 'down' ? lowerStill(q) : raiseStill(q)
+          : direction === 'down' ? lowerStill(q) : raiseStill(q, ceiling)
+      // Movimento lento com o movimento já no mínimo (divisor 4, 120 passos):
+      // o que pesa é a resolução da tela (a pintura e o bloom), então desce o
+      // dpr e ele vira teto, para o botão de parado não subir de novo.
+      if (kind === 'motion' && direction === 'down' && same(next, q)) {
+        next = lowerStill(q)
+        ceiling = next.dpr
+      }
       if (same(next, q)) return null
 
       const knob = knobs[kind]
@@ -126,8 +151,15 @@ export function createCachedQuality(mobile: boolean) {
       // Depois de uma troca, as medidas recomeçam do zero.
       windows.motion = { frames: 0, time: 0 }
       windows.idle = { frames: 0, time: 0 }
+      idleVerdicts = 0
       return next
     },
+    /**
+     * A resolução da imagem parada já foi avaliada parada sem mudar: dá para
+     * gastar tempo suavizando (antes disso, uma subida de dpr jogaria fora a
+     * suavização feita).
+     */
+    stillSettled: () => idleVerdicts > 0,
   }
 }
 

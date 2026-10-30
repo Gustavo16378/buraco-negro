@@ -12,7 +12,7 @@ import {
   useAnimatedUniforms,
 } from './blackHoleUniforms.ts'
 import { createBloom } from './bloom.ts'
-import { MAX_STEPS, createCachedQuality, initialLevels, nextRefineRows, type FrameKind } from './cachedQuality.ts'
+import { MAX_STEPS, createCachedQuality, initialLevels, maxDprFor, nextRefineRows, type FrameKind } from './cachedQuality.ts'
 import { remainingGlide } from './cameraDamping.ts'
 import { compileFor } from './compile.ts'
 import { createGasFields } from './gasFields.ts'
@@ -111,7 +111,7 @@ function createRenderState(
     lowScene,
     gas,
     bloom,
-    quality: createCachedQuality(IS_MOBILE),
+    quality: createCachedQuality(IS_MOBILE, maxDprFor(IS_MOBILE, window.devicePixelRatio || 1)),
     /** Câmera do quadro anterior, para medir quanto ela andou. */
     previous: createView(),
     hasPrevious: false,
@@ -272,7 +272,12 @@ export function BlackHoleCached() {
         if (isComplete(still)) sceneShared.traces++
         kind = 'refine'
       }
-    } else if (settled && acc.samples < JITTER.length && still.target.width * still.target.height <= ACC_MAX_PIXELS) {
+    } else if (
+      settled &&
+      s.quality.stillSettled() &&
+      acc.samples < JITTER.length &&
+      still.target.width * still.target.height <= ACC_MAX_PIXELS
+    ) {
       // Imagem parada pronta e câmera assentada: soma as amostras extras do
       // pixel, uma de cada vez, em faixas como a imagem parada.
       if (!acc.active) restartAccumulation(gl, acc, still)

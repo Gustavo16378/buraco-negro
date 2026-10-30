@@ -5,20 +5,21 @@ import { test } from 'node:test'
 import {
   MAX_DPR,
   MAX_STEPS,
-  MIN_DPR,
   MIN_REFINE_ROWS,
   MIN_STEPS,
   createCachedQuality,
   initialLevels,
   lowerMotion,
+  maxDprFor,
   nextRefineRows,
   raiseMotion,
   type Levels,
 } from './cachedQuality.ts'
 
-test('ponto de partida: celular a 50% da tela física, desktop no dpr da tela', () => {
-  assert.deepEqual(initialLevels(true, 2), { dpr: 1, steps: 160, motionDiv: 3 })
-  assert.equal(initialLevels(true, 1).dpr, MIN_DPR)
+test('ponto de partida: celular a 75% da tela física, desktop no dpr da tela', () => {
+  assert.deepEqual(initialLevels(true, 2), { dpr: 1.5, steps: 160, motionDiv: 3 })
+  assert.equal(initialLevels(true, 3).dpr, 2)
+  assert.equal(initialLevels(true, 1).dpr, 0.75)
   assert.equal(initialLevels(false, 1).dpr, 1)
   assert.equal(initialLevels(false, 3).dpr, MAX_DPR)
   assert.equal(initialLevels(false, 1).steps, MAX_STEPS)
@@ -54,6 +55,37 @@ test('cada botão só responde aos seus quadros', () => {
   assert.deepEqual(feed(c, 'idle', 60, q), { ...q, dpr: 1.25 })
   // Quadros de refino não contam.
   for (let i = 0; i < 100; i++) assert.equal(c.frame('refine', 1, q), null)
+})
+
+test('no celular o dpr pode subir até a tela física (até 2); no desktop, até 1,5', () => {
+  assert.equal(maxDprFor(true, 2), 2)
+  assert.equal(maxDprFor(true, 3), 2)
+  assert.equal(maxDprFor(true, 1), MAX_DPR)
+  assert.equal(maxDprFor(false, 2), MAX_DPR)
+  const c = createCachedQuality(true, 2)
+  let q: Levels = { dpr: 1.5, steps: 160, motionDiv: 3 }
+  q = feed(c, 'idle', 60, q) ?? q
+  assert.equal(q.dpr, 1.75)
+})
+
+test('movimento lento já no mínimo desce o dpr, e o parado não sobe acima dele', () => {
+  const c = createCachedQuality(true, 2)
+  let q: Levels = { dpr: 1.5, steps: MIN_STEPS, motionDiv: 4 }
+  q = feed(c, 'motion', 15, q) ?? q
+  assert.equal(q.dpr, 1.25)
+  // Parado com folga: não volta para 1,5.
+  assert.equal(feed(c, 'idle', 60, q), null)
+})
+
+test('a suavização espera a resolução parada ser avaliada sem mudar', () => {
+  const c = createCachedQuality(true, 2)
+  const q: Levels = { dpr: 2, steps: 160, motionDiv: 3 }
+  assert.equal(c.stillSettled(), false)
+  assert.equal(feed(c, 'idle', 40, q), null) // dentro da faixa: fica
+  assert.equal(c.stillSettled(), true)
+  // Uma troca (aqui, o movimento lento) zera a avaliação.
+  assert.notEqual(feed(c, 'motion', 15, q), null)
+  assert.equal(c.stillSettled(), false)
 })
 
 test('quadros muito longos (aba oculta, compilação) não derrubam a qualidade', () => {
