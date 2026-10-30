@@ -3,6 +3,10 @@ import type { Dict } from './pt.ts'
 export const en: Dict = {
   locale: 'en-US',
   title: 'Black hole in real time',
+  loading: {
+    title: 'Loading',
+    note: 'On the first visit, the graphics processor has to compile the light-ray calculation. It takes a few seconds.',
+  },
   mode: {
     label: 'View mode',
     interstellar: 'Interstellar',

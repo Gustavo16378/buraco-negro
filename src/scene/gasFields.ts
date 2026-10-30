@@ -12,6 +12,7 @@ import {
   type WebGLRenderer,
 } from 'three'
 import type { BlackHoleUniforms } from './blackHoleUniforms.ts'
+import { compileFor } from './compile.ts'
 import { gasSeeds } from './gasSeeds.ts'
 import { createBlackHoleMaterial, gasShader } from './shaderSource.ts'
 
@@ -81,6 +82,8 @@ export function createGasFields(uniforms: BlackHoleUniforms) {
   }
 
   return {
+    /** Compila o shader do gás sem travar a página (veja compile.ts). */
+    compile: (renderer: WebGLRenderer, camera: Camera) => compileFor(renderer, fields[0].target, scene, camera, scene),
     /** A cada quadro, depois de avançar o tempo e antes da pintura. */
     update(renderer: WebGLRenderer, camera: Camera) {
       const { seed0, seed1, next } = gasSeeds(uniforms.uTime.value)

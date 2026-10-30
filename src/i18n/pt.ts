@@ -1,6 +1,10 @@
 export const pt = {
   locale: 'pt-BR',
   title: 'Buraco negro em tempo real',
+  loading: {
+    title: 'Carregando',
+    note: 'Na primeira visita, o processador gráfico precisa compilar o cálculo dos raios de luz. Leva alguns segundos.',
+  },
   mode: {
     label: 'Modo de visualização',
     interstellar: 'Interstellar',

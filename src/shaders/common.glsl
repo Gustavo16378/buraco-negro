@@ -41,6 +41,14 @@ uniform float uGasSeed;
 uniform float uUpsample;
 uniform sampler2D uLowColor;
 uniform vec2 uPaintSize;
+// Sempre 0. Somado ao limite dos laços do céu e do fbm, para o compilador não
+// conseguir prever quantas voltas eles dão. O compilador de shaders do
+// Direct3D, que o Chrome usa no Windows, desenrola todo laço de limite
+// constante e copia o corpo de cada função em cada chamada: com as 6 camadas
+// de estrelas e os fbm do céu, o traçado levava ~4 s para compilar na
+// primeira visita (e o ANGLE compila duas vezes, veja BlackHoleCached.tsx). Com os
+// laços de verdade, ~1,6 s. O resultado não muda.
+uniform int uNoUnroll;
 
 in vec2 vUv;
 
@@ -75,7 +83,7 @@ float noise3(vec3 p) {
 // Soma de oitavas de noise3, normalizada para ficar em [0, 1].
 float fbm(vec3 p, int octaves) {
   float sum = 0.0, amp = 0.5, norm = 0.0;
-  for (int i = 0; i < octaves; i++) {
+  for (int i = 0; i < octaves + uNoUnroll; i++) {
     sum += amp * noise3(p);
     norm += amp;
     p = p * 2.03 + 17.1;

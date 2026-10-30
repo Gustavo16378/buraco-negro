@@ -1,11 +1,12 @@
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
-import type { Mesh } from 'three'
+import { HalfFloatType, WebGLRenderTarget, type Mesh } from 'three'
 import { DEBUG } from '../debug.ts'
 import { pixelUv } from '../physics/probe.ts'
 import type { Destination } from '../physics/trace.ts'
 import { useStore } from '../state/store.ts'
 import { copyTraceInputs, createBlackHoleUniforms, traceSnapshot, useAnimatedUniforms } from './blackHoleUniforms.ts'
+import { compileFor } from './compile.ts'
 import { createShaderPass } from './gpuReadback.ts'
 import { createBlackHoleMaterial, legacyShader } from './shaderSource.ts'
 import { attachShadowMeasure } from './shadowMeasure.ts'
@@ -21,6 +22,7 @@ const DESTINATIONS: Destination[] = ['sky', 'horizon', 'disk']
 export function BlackHoleLegacy() {
   const gl = useThree((s) => s.gl)
   const camera = useThree((s) => s.camera)
+  const scene = useThree((s) => s.scene)
   const mesh = useRef<Mesh>(null)
   const uniforms = useMemo(() => createBlackHoleUniforms(), [])
   const material = useMemo(() => createBlackHoleMaterial(legacyShader, uniforms), [uniforms])
@@ -37,6 +39,21 @@ export function BlackHoleLegacy() {
   useEffect(() => {
     const pass = DEBUG ? createShaderPass(gl) : null
     const detach = DEBUG && mesh.current ? attachShadowMeasure(mesh.current) : null
+
+    // Compila sem travar a página, numa render target de ponto flutuante como
+    // a do pós-processamento; até lá a tela de carregamento fica na frente.
+    const m = mesh.current
+    const target = new WebGLRenderTarget(1, 1, { type: HalfFloatType })
+    let alive = true
+    if (m) {
+      m.visible = false
+      compileFor(gl, target, m, camera, scene).then(() => {
+        target.dispose()
+        if (!alive) return
+        m.visible = true
+        useStore.getState().setReady(true)
+      })
+    }
     sceneShared.renderer = 'legacy'
     sceneShared.selfTestMaterial = material
     sceneShared.probe = {
@@ -50,6 +67,8 @@ export function BlackHoleLegacy() {
       },
     }
     return () => {
+      alive = false
+      target.dispose()
       pass?.dispose()
       detach?.()
       material.dispose()
@@ -57,7 +76,7 @@ export function BlackHoleLegacy() {
       sceneShared.selfTestMaterial = null
       sceneShared.probe = null
     }
-  }, [gl, camera, uniforms, material])
+  }, [gl, camera, scene, uniforms, material])
 
   return (
     <mesh ref={mesh} frustumCulled={false} material={material}>

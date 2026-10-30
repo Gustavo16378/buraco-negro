@@ -27,9 +27,76 @@
     <meta name="twitter:description" content="Lente gravitacional e disco de acreção calculados com Relatividade Geral, rodando no navegador." />
     <meta name="twitter:image" content="https://SEU-DOMINIO.pages.dev/og.png" />
     <meta name="twitter:image:alt" content="Buraco negro com o disco de acreção curvado pela gravidade em volta da sombra" />
+
+    <!--
+      Tela de carregamento: aparece antes de o JavaScript chegar e fica até a
+      primeira imagem do buraco negro (src/ui/Loading.tsx usa as mesmas classes).
+    -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #000;
+      }
+      .boot {
+        position: fixed;
+        inset: 0;
+        z-index: 30;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 1rem;
+        padding: 0 1.5rem;
+        background: #000;
+        color: #e8e6e1;
+        text-align: center;
+      }
+      .boot-bar {
+        position: relative;
+        width: 120px;
+        height: 1px;
+        overflow: hidden;
+        background: rgb(255 255 255 / 0.15);
+      }
+      .boot-bar::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        width: 40%;
+        background: #ffb46b;
+        animation: boot-slide 1.4s ease-in-out infinite;
+      }
+      /* O texto só aparece se a espera passar de ~1 s (na volta, com os
+         shaders já no cache do navegador, ele nem chega a aparecer). */
+      .boot-text {
+        opacity: 0;
+        animation: boot-in 0.4s ease 0.8s forwards;
+      }
+      @keyframes boot-slide {
+        from {
+          transform: translateX(-100%);
+        }
+        to {
+          transform: translateX(250%);
+        }
+      }
+      @keyframes boot-in {
+        to {
+          opacity: 1;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .boot-bar::after {
+          width: 100%;
+          opacity: 0.6;
+          animation: none;
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div class="boot" aria-hidden="true"><div class="boot-bar"></div></div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

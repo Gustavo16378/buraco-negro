@@ -157,8 +157,8 @@ vec3 starLayer(vec3 d, Pixel P, Stars L) {
   // Olha as 8 células vizinhas também, para o brilho de uma estrela perto da
   // borda da célula não ser cortado. O halo maior (~3 sigma) cabe numa célula
   // das camadas que têm halo.
-  for (int j = -1; j <= 1; j++) {
-    for (int i = -1; i <= 1; i++) {
+  for (int j = -1; j <= 1 + uNoUnroll; j++) {
+    for (int i = -1; i <= 1 + uNoUnroll; i++) {
       vec2 c = cell + vec2(i, j);
       if (any(lessThan(c, vec2(0.0))) || any(greaterThanEqual(c, vec2(L.cells)))) continue;
 
@@ -242,12 +242,18 @@ vec3 sky(vec3 d, Pixel P, float weight) {
   vec3 large  = density(0.35 * open);
   vec3 huge   = density(shown * 0.25 * g.transmission);
 
-  col += g.tint * starLayer(d, P, Stars(300.0, grain, 2.0, vec2(0.04, 0.16), vec2(0.7, 0.7), vec2(0.0), 4u));
-  col += starLayer(d, P, Stars(160.0, inBand, 3.0, vec2(0.30, 0.80), vec2(0.70, 0.90), vec2(0.0),       0u));
-  col += starLayer(d, P, Stars(120.0, small,  2.0, vec2(0.22, 0.35), vec2(0.70, 0.75), vec2(0.0),       5u));
-  col += starLayer(d, P, Stars( 70.0, medium, 3.0, vec2(0.30, 0.90), vec2(0.70, 1.00), vec2(0.0),       1u));
-  col += starLayer(d, P, Stars( 24.0, large,  4.0, vec2(0.80, 1.60), vec2(1.00, 1.50), vec2(0.04, 3.5), 2u));
-  col += starLayer(d, P, Stars(  8.0, huge,   2.0, vec2(1.60, 2.60), vec2(1.40, 2.00), vec2(0.10, 5.5), 3u));
+  // As camadas vão num laço (com uNoUnroll), e não em 6 chamadas seguidas,
+  // para o compilador gerar uma cópia só de starLayer.
+  Stars layers[6] = Stars[6](
+    Stars(300.0, grain,  2.0, vec2(0.04, 0.16), vec2(0.70, 0.70), vec2(0.0),       4u),
+    Stars(160.0, inBand, 3.0, vec2(0.30, 0.80), vec2(0.70, 0.90), vec2(0.0),       0u),
+    Stars(120.0, small,  2.0, vec2(0.22, 0.35), vec2(0.70, 0.75), vec2(0.0),       5u),
+    Stars( 70.0, medium, 3.0, vec2(0.30, 0.90), vec2(0.70, 1.00), vec2(0.0),       1u),
+    Stars( 24.0, large,  4.0, vec2(0.80, 1.60), vec2(1.00, 1.50), vec2(0.04, 3.5), 2u),
+    Stars(  8.0, huge,   2.0, vec2(1.60, 2.60), vec2(1.40, 2.00), vec2(0.10, 5.5), 3u));
+  // Só o grão da faixa leva a cor da Via Láctea.
+  vec3 tints[6] = vec3[6](g.tint, vec3(1.0), vec3(1.0), vec3(1.0), vec3(1.0), vec3(1.0));
+  for (int l = 0; l < 6 + uNoUnroll; l++) col += tints[l] * starLayer(d, P, layers[l]);
 
   return col;
 }

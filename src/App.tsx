@@ -11,6 +11,7 @@ import { ProbeTracer } from './scene/ProbeTracer.tsx'
 import { useStore } from './state/store.ts'
 import { DebugPanel } from './ui/DebugPanel.tsx'
 import { LangToggle } from './ui/LangToggle.tsx'
+import { Loading } from './ui/Loading.tsx'
 import { ModeToggle } from './ui/ModeToggle.tsx'
 import { ProbeMarker } from './ui/ProbeMarker.tsx'
 import { ProbePanel } from './ui/ProbePanel.tsx'
@@ -66,6 +67,7 @@ export default function App() {
       <LangToggle />
       <ProbePanel />
       {DEBUG && <DebugPanel />}
+      <Loading />
     </div>
   )
 }

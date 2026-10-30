@@ -5,7 +5,9 @@ import { DEBUG } from '../debug.ts'
 import { IS_MOBILE, useStore } from '../state/store.ts'
 import { bindCache, createBlackHoleUniforms, setPaintTarget, useAnimatedUniforms } from './blackHoleUniforms.ts'
 import { MAX_STEPS, createCachedQuality, initialLevels, nextRefineRows, type FrameKind } from './cachedQuality.ts'
+import { compileFor } from './compile.ts'
 import { createGasFields } from './gasFields.ts'
+import { readTexel } from './gpuReadback.ts'
 import { createBlackHoleMaterial, paintShader } from './shaderSource.ts'
 import { attachShadowMeasure } from './shadowMeasure.ts'
 import { sceneShared } from './shared.ts'
@@ -76,6 +78,9 @@ function createRenderState(uniforms: ReturnType<typeof createBlackHoleUniforms>,
     lastKind: 'idle' as FrameKind,
     /** Linhas da imagem parada traçadas por quadro (ajustado pelo tempo dos quadros). */
     rows: INITIAL_REFINE_ROWS,
+    /** Shaders compilados (sem travar a página) e primeira imagem pronta. */
+    compiled: false,
+    ready: false,
     dispose: () => {
       tracer.dispose()
       motion.target.dispose()
@@ -98,6 +103,7 @@ function createRenderState(uniforms: ReturnType<typeof createBlackHoleUniforms>,
  */
 export function BlackHoleCached() {
   const gl = useThree((s) => s.gl)
+  const camera = useThree((s) => s.camera)
   const paint = useRef<Mesh>(null)
   const state = useRef<ReturnType<typeof createRenderState> | null>(null)
   const size = useMemo(() => new Vector2(), [])
@@ -123,7 +129,20 @@ export function BlackHoleCached() {
     if (mesh) mesh.onBeforeRender = (renderer) => setPaintTarget(uniforms, renderer)
     const detach = DEBUG && mesh ? attachShadowMeasure(mesh) : null
 
+    // Compila traçado, gás e pintura sem travar a página; até lá a tela de
+    // carregamento fica na frente e o quad da tela não é desenhado.
+    if (mesh) mesh.visible = false
+    let alive = true
+    Promise.all([
+      compileFor(gl, s.motion.target, s.tracer.scene, camera, s.tracer.scene),
+      s.gas.compile(gl, camera),
+      compileFor(gl, s.low, s.lowScene, camera, s.lowScene),
+    ]).then(() => {
+      if (alive) s.compiled = true
+    })
+
     return () => {
+      alive = false
       s.dispose()
       material.dispose()
       state.current = null
@@ -135,14 +154,14 @@ export function BlackHoleCached() {
       sceneShared.probe = null
       sceneShared.phase = null
     }
-  }, [gl, uniforms, material])
+  }, [gl, camera, uniforms, material])
 
   // Prioridade 0: depois do OrbitControls (-1), que move a câmera, e do
   // avanço do tempo (registrado antes), e antes da sonda (0,5) e do
   // pós-processamento (1), que desenha a tela.
   useFrame(({ camera }, delta) => {
     const s = state.current
-    if (!s || !(camera instanceof PerspectiveCamera)) return
+    if (!s || !s.compiled || !(camera instanceof PerspectiveCamera)) return
     s.gas.update(gl, camera)
 
     // Qualidade: o tempo deste quadro mede o trabalho do quadro anterior.
@@ -213,6 +232,18 @@ export function BlackHoleCached() {
 
     sceneShared.phase = shown === still ? 'still' : still.active ? 'refining' : 'motion'
     sceneShared.refine = still.active ? Math.min(1, still.rows / still.target.height) : 0
+
+    // Primeiro quadro com tudo compilado. No Windows, o ANGLE (que traduz o
+    // WebGL para Direct3D) ainda compila o traçado de novo no primeiro desenho
+    // nas 3 texturas da cache: o programa ligado só escreve na primeira saída.
+    // Esta leitura espera isso acabar, com a tela de carregamento na frente;
+    // depois o quad da tela aparece já com a imagem.
+    if (!s.ready) {
+      readTexel(gl, motion.target, 0, 0, 0)
+      if (paint.current) paint.current.visible = true
+      s.ready = true
+      store.setReady(true)
+    }
   })
 
   return (

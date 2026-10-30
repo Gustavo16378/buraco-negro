@@ -54,6 +54,7 @@ export function createBlackHoleUniforms() {
     uGas0: { value: null as Texture | null },
     uGas1: { value: null as Texture | null },
     uGasSeed: { value: 0 },
+    uNoUnroll: { value: 0 }, // sempre 0: veja common.glsl
     uUpsample: { value: 0 },
     uLowColor: { value: null as Texture | null },
     uPaintSize: { value: new Vector2(1, 1) },

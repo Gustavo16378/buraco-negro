@@ -61,9 +61,10 @@ export function DeviceDiagnostics() {
       elapsed.current = 0
     }
 
-    // Uma vez só, assim que o material existe.
+    // Uma vez só, depois que os shaders compilaram (antes disso, desenhar com o
+    // material travaria a página esperando a compilação).
     const material = sceneShared.selfTestMaterial
-    if (done.current || !material) return
+    if (done.current || !material || !store.ready) return
     done.current = true
 
     const gl = renderer.getContext() as WebGL2RenderingContext

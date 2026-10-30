@@ -106,6 +106,9 @@ type State = {
   setProbeResult: (reading: ProbeReading, gpu: GpuProbe | null) => void
   quality: Quality
   setQuality: (quality: Quality) => void
+  /** Shaders compilados e a primeira imagem do buraco negro pronta: some a tela de carregamento. */
+  ready: boolean
+  setReady: (ready: boolean) => void
   fps: number
   setFps: (fps: number) => void
   device: DeviceInfo | null
@@ -136,6 +139,8 @@ export const useStore = create<State>()((set) => ({
   setProbeResult: (probeReading, probeGpu) => set({ probeReading, probeGpu }),
   quality: initialQuality,
   setQuality: (quality) => set({ quality }),
+  ready: false,
+  setReady: (ready) => set({ ready }),
   fps: 0,
   setFps: (fps) => set({ fps }),
   device: null,
