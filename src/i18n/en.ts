@@ -6,6 +6,10 @@ export const en: Dict = {
   loading: {
     title: 'Loading',
     note: 'On the first visit, the graphics processor has to compile the light-ray calculation. It takes a few seconds.',
+    slow: 'This is taking longer than usual. The page keeps trying.',
+    failTitle: 'The black hole could not be drawn on this device',
+    failNote:
+      'The browser could not use the graphics processor. Close the browser completely and open the page again. If it keeps happening, send the text below.',
   },
   mode: {
     label: 'View mode',

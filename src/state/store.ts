@@ -112,6 +112,13 @@ type State = {
   /** Shaders compilados e a primeira imagem do buraco negro pronta: some a tela de carregamento. */
   ready: boolean
   setReady: (ready: boolean) => void
+  /**
+   * O que impediu o buraco negro de aparecer (o navegador não criou o WebGL2,
+   * a GPU parou, um shader não compilou), com o detalhe técnico. A tela de
+   * carregamento mostra isso em vez de ficar preta.
+   */
+  failure: string | null
+  setFailure: (failure: string) => void
   fps: number
   setFps: (fps: number) => void
   device: DeviceInfo | null
@@ -144,6 +151,9 @@ export const useStore = create<State>()((set) => ({
   setQuality: (quality) => set({ quality }),
   ready: false,
   setReady: (ready) => set({ ready }),
+  failure: null,
+  // Guarda a primeira falha: as seguintes costumam ser consequência dela.
+  setFailure: (failure) => set((s) => (s.failure ? {} : { failure })),
   fps: 0,
   setFps: (fps) => set({ fps }),
   device: null,

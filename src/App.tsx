@@ -8,7 +8,9 @@ import { CameraRig } from './scene/CameraRig.tsx'
 import { Effects } from './scene/Effects.tsx'
 import { DeviceDiagnostics } from './scene/DeviceDiagnostics.tsx'
 import { ProbeTracer } from './scene/ProbeTracer.tsx'
+import { watchRenderer } from './scene/watchRenderer.ts'
 import { useStore } from './state/store.ts'
+import { CanvasBoundary } from './ui/CanvasBoundary.tsx'
 import { DebugPanel } from './ui/DebugPanel.tsx'
 import { LangToggle } from './ui/LangToggle.tsx'
 import { Loading } from './ui/Loading.tsx'
@@ -42,26 +44,29 @@ export default function App() {
 
   return (
     <div className="fixed inset-0 bg-black">
-      <Canvas
-        dpr={dpr}
-        frameloop={visible ? 'always' : 'never'}
-        // Sem tone mapping no renderizador: o ACES fica só no fim da cadeia de
-        // pós-processamento (Effects.tsx), aplicado uma vez.
-        flat
-        gl={{ antialias: false, powerPreference: 'high-performance' }}
-        camera={{
-          fov: 45,
-          near: 0.1,
-          far: 200,
-          position: [0, CAM_DIST * Math.sin(CAM_INCL), CAM_DIST * Math.cos(CAM_INCL)],
-        }}
-      >
-        <BlackHole />
-        <CameraRig />
-        <Effects />
-        <ProbeTracer />
-        {DEBUG && <DeviceDiagnostics />}
-      </Canvas>
+      <CanvasBoundary>
+        <Canvas
+          dpr={dpr}
+          frameloop={visible ? 'always' : 'never'}
+          // Sem tone mapping no renderizador: o ACES fica só no fim da cadeia de
+          // pós-processamento (Effects.tsx), aplicado uma vez.
+          flat
+          gl={{ antialias: false, powerPreference: 'high-performance' }}
+          onCreated={({ gl }) => watchRenderer(gl)}
+          camera={{
+            fov: 45,
+            near: 0.1,
+            far: 200,
+            position: [0, CAM_DIST * Math.sin(CAM_INCL), CAM_DIST * Math.cos(CAM_INCL)],
+          }}
+        >
+          <BlackHole />
+          <CameraRig />
+          <Effects />
+          <ProbeTracer />
+          {DEBUG && <DeviceDiagnostics />}
+        </Canvas>
+      </CanvasBoundary>
       <ProbeMarker />
       <ModeToggle />
       <LangToggle />

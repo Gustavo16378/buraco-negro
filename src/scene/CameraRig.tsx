@@ -17,7 +17,8 @@ const MAX_DISTANCE = 60
  * Devolve a distância da regra usada.
  */
 function applyFraming(camera: Camera, aspect: number, previous: number | null) {
-  if (!(camera instanceof PerspectiveCamera)) return previous
+  // Sem tamanho de tela ainda (0 / 0), não mexe: um NaN na câmera não sai mais.
+  if (!(camera instanceof PerspectiveCamera) || !(aspect > 0 && Number.isFinite(aspect))) return previous
   const distance = framingDistance(aspect)
   camera.fov = framingFov(aspect, distance)
   camera.updateProjectionMatrix()

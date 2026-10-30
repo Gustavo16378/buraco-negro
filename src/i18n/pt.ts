@@ -4,6 +4,10 @@ export const pt = {
   loading: {
     title: 'Carregando',
     note: 'Na primeira visita, o processador gráfico precisa compilar o cálculo dos raios de luz. Leva alguns segundos.',
+    slow: 'Está levando mais tempo que o normal. A página continua tentando.',
+    failTitle: 'Não deu para desenhar o buraco negro neste aparelho',
+    failNote:
+      'O navegador não conseguiu usar o processador gráfico. Feche o navegador por completo e abra a página de novo. Se continuar, mande o texto abaixo.',
   },
   mode: {
     label: 'Modo de visualização',
