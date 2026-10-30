@@ -16,6 +16,7 @@ import { DISK_IN, DISK_OUT, DISK_TEMP, TIME_SCALE } from '../physics/constants.t
 import type { TraceOptions } from '../physics/trace.ts'
 import { useStore } from '../state/store.ts'
 import type { TraceSnapshot } from './shared.ts'
+import { BLOOM } from './bloomSettings.ts'
 import { SELF_TEST_HASH_INPUT, SELF_TEST_POINT } from './skySelfTest.ts'
 
 // Maior intervalo entre quadros que a animação aceita, em segundos. Depois de
@@ -59,6 +60,11 @@ export function createBlackHoleUniforms() {
     uUpsample: { value: 0 },
     uLowColor: { value: null as Texture | null },
     uPaintSize: { value: new Vector2(1, 1) },
+    uFinal: { value: 0 },
+    uBloom: { value: null as Texture | null },
+    uBloomIntensity: { value: BLOOM.intensity },
+    uBloomThreshold: { value: BLOOM.threshold },
+    uBloomSmoothing: { value: BLOOM.smoothing },
   }
 }
 
@@ -92,6 +98,15 @@ export function bindCache(u: BlackHoleUniforms, cache: WebGLRenderTarget | null,
   u.uCacheSecond.value = cache?.textures[2] ?? null
   u.uLowColor.value = lowColor
   u.uUpsample.value = lowColor ? 1 : 0
+}
+
+/**
+ * Passada final da pintura (na tela: soma o bloom e aplica o tone mapping) ou
+ * intermediária (a pintura reduzida em movimento, em HDR).
+ */
+export function setFinalPass(u: BlackHoleUniforms, final: boolean, bloom: Texture | null = null) {
+  u.uFinal.value = final ? 1 : 0
+  if (bloom) u.uBloom.value = bloom
 }
 
 /**

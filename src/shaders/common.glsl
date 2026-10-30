@@ -41,6 +41,13 @@ uniform float uGasSeed;
 uniform float uUpsample;
 uniform sampler2D uLowColor;
 uniform vec2 uPaintSize;
+// Pós-processamento do renderizador com cache (bloom.ts): uFinal = 1 na
+// passada que desenha na tela (soma o bloom e aplica o tone mapping).
+uniform float uFinal;
+uniform sampler2D uBloom;
+uniform float uBloomIntensity;
+uniform float uBloomThreshold;
+uniform float uBloomSmoothing;
 // Sempre 0. Com LOOPED_SKY (?lacos na URL), é somado ao limite dos laços do
 // céu e do fbm, para o compilador não conseguir prever quantas voltas eles
 // dão. O compilador de shaders do Direct3D, que o Chrome usa no Windows,

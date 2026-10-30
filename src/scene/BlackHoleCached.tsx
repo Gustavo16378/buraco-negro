@@ -3,7 +3,8 @@ import { useEffect, useMemo, useRef } from 'react'
 import { HalfFloatType, LinearFilter, Mesh, PerspectiveCamera, PlaneGeometry, Scene, Vector2, WebGLRenderTarget } from 'three'
 import { DEBUG } from '../debug.ts'
 import { IS_MOBILE, useStore } from '../state/store.ts'
-import { bindCache, createBlackHoleUniforms, setPaintTarget, useAnimatedUniforms } from './blackHoleUniforms.ts'
+import { bindCache, createBlackHoleUniforms, setFinalPass, setPaintTarget, useAnimatedUniforms } from './blackHoleUniforms.ts'
+import { createBloom } from './bloom.ts'
 import { MAX_STEPS, createCachedQuality, initialLevels, nextRefineRows, type FrameKind } from './cachedQuality.ts'
 import { remainingGlide } from './cameraDamping.ts'
 import { compileFor } from './compile.ts'
@@ -67,6 +68,8 @@ function createRenderState(uniforms: ReturnType<typeof createBlackHoleUniforms>,
   const lowScene = new Scene()
   lowScene.add(lowQuad)
   const gas = createGasFields(uniforms)
+  // Bloom: no celular a fonte em 1/4 da tela e 3 níveis; no desktop, 1/2 e 4.
+  const bloom = IS_MOBILE ? createBloom(uniforms, 0.25, 3) : createBloom(uniforms, 0.5, 4)
   return {
     tracer,
     motion,
@@ -74,6 +77,7 @@ function createRenderState(uniforms: ReturnType<typeof createBlackHoleUniforms>,
     low,
     lowScene,
     gas,
+    bloom,
     quality: createCachedQuality(IS_MOBILE),
     /** Câmera do quadro anterior, para medir quanto ela andou. */
     previous: createView(),
@@ -95,6 +99,7 @@ function createRenderState(uniforms: ReturnType<typeof createBlackHoleUniforms>,
       low.dispose()
       lowQuad.geometry.dispose()
       gas.dispose()
+      bloom.dispose()
     },
   }
 }
@@ -144,6 +149,9 @@ export function BlackHoleCached() {
       compileFor(gl, s.motion.target, s.tracer.scene, camera, s.tracer.scene),
       s.gas.compile(gl, camera),
       compileFor(gl, s.low, s.lowScene, camera, s.lowScene),
+      // A pintura na tela é outro programa (a saída em sRGB entra na chave).
+      compileFor(gl, null, s.lowScene, camera, s.lowScene),
+      s.bloom.compile(gl, camera),
     ]).then(() => {
       if (alive) s.compiled = true
     })
@@ -244,6 +252,7 @@ export function BlackHoleCached() {
       }
       const previous = gl.getRenderTarget()
       gl.setRenderTarget(low)
+      setFinalPass(uniforms, false)
       gl.render(s.lowScene, camera)
       gl.setRenderTarget(previous)
       bindCache(uniforms, shown.target, low.texture)
@@ -265,6 +274,22 @@ export function BlackHoleCached() {
       store.setReady(true)
     }
   })
+
+  // Prioridade 1: o desenho na tela, no lugar do pós-processamento. Primeiro
+  // o bloom (bloom.ts), depois a pintura soma o bloom, aplica o tone mapping e
+  // escreve na tela, numa passada só.
+  useFrame(({ camera, scene }) => {
+    const s = state.current
+    if (s?.ready) {
+      gl.getDrawingBufferSize(size)
+      setFinalPass(uniforms, true, s.bloom.render(gl, camera, size.x, size.y))
+      sceneShared.frameTimer?.mark('bloom')
+    } else {
+      setFinalPass(uniforms, true)
+    }
+    gl.setRenderTarget(null)
+    gl.render(scene, camera)
+  }, 1)
 
   return (
     <mesh ref={paint} frustumCulled={false} material={material}>

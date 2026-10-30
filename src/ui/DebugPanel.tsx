@@ -113,6 +113,7 @@ export function DebugPanel() {
                 <Row label={d.partGas}>{ms.format(render.times.gas)} ms</Row>
                 <Row label={d.partTrace}>{ms.format(render.times.trace)} ms</Row>
                 <Row label={d.partLow}>{ms.format(render.times.low)} ms</Row>
+                <Row label={d.partBloom}>{ms.format(render.times.bloom)} ms</Row>
               </>
             )}
             <Row label={render.renderer === 'cached' ? d.partPost : d.partPostLegacy}>{ms.format(render.times.post)} ms</Row>

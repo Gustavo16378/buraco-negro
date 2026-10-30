@@ -1,13 +1,13 @@
 import { WebGLRenderTarget, type WebGLRenderer } from 'three'
 
 /** Partes do quadro medidas no ?debug, na ordem em que acontecem. */
-export type FramePart = 'other' | 'gas' | 'trace' | 'low' | 'post'
+export type FramePart = 'other' | 'gas' | 'trace' | 'low' | 'bloom' | 'post'
 export type FrameTimes = Record<FramePart, number> & { total: number }
 
 // Uma amostra por segundo.
 const SAMPLE_EVERY = 1
 
-const empty = (): FrameTimes => ({ other: 0, gas: 0, trace: 0, low: 0, post: 0, total: 0 })
+const empty = (): FrameTimes => ({ other: 0, gas: 0, trace: 0, low: 0, bloom: 0, post: 0, total: 0 })
 
 /**
  * ?debug: quanto cada parte do quadro custa, numa amostra por segundo. No

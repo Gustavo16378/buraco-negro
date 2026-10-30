@@ -10,7 +10,7 @@ import type { Camera, Object3D, Scene, WebGLRenderer, WebGLRenderTarget } from '
  */
 export function compileFor(
   renderer: WebGLRenderer,
-  target: WebGLRenderTarget,
+  target: WebGLRenderTarget | null,
   object: Object3D,
   camera: Camera,
   scene: Scene | null = null,
