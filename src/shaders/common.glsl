@@ -5,7 +5,8 @@
 // src/scene/shaderSource.ts.
 //
 // ESCAPE_R, DT_FACTOR, MIN_DT, MAX_DT, MAX_LOOP_STEPS, OPACITY_STOP,
-// DISK_FADE_IN, DISK_FADE_OUT e T_PROFILE_PEAK chegam como #define, vindos de
+// DISK_FADE_IN, DISK_FADE_OUT, T_PROFILE_PEAK e FLOW_PERIOD chegam como
+// #define, vindos de
 // src/physics/constants.ts: são as mesmas que o integrador na CPU usa.
 
 uniform vec3 uCamPos;    // posição da câmera, em r_s
@@ -30,6 +31,11 @@ uniform sampler2D uCacheSky;
 uniform sampler2D uCacheFirst;
 uniform sampler2D uCacheSecond;
 uniform vec2 uCacheScale;
+// Campos de ruído do gás das duas cópias, numa grade polar (ver gas.frag.glsl),
+// e a semente do campo que a passada do gás está calculando.
+uniform sampler2D uGas0;
+uniform sampler2D uGas1;
+uniform float uGasSeed;
 
 in vec2 vUv;
 

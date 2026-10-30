@@ -46,9 +46,6 @@ float diskNoise(float r, float ang, float cycle) {
   return fbm(q, 4);
 }
 
-// Período (em r_s / c) em que cada cópia do ruído é reiniciada. Veja diskSample.
-const float FLOW_PERIOD = 40.0;
-
 // Fator de desvio de frequência g = ν_observado / ν_emitido da luz que sai do
 // gás no ponto p e chega à câmera (SPEC, "Modo Física real").
 //   Doppler relativístico: o gás em órbita se move a β = sqrt(0,5 / (r - 1))
@@ -70,8 +67,6 @@ float frequencyShift(vec3 p, float r, vec3 rayDir) {
   return doppler * grav;
 }
 
-// Quanto gás há agora no ponto do disco a r do centro e no ângulo phi
-// (atan(z, x)), de 0 a 1.
 // O gás gira no sentido de φ crescente com a velocidade angular kepleriana
 // Ω = sqrt(M / r³), M = 0,5. O centro gira mais rápido que a borda, então o
 // ruído se estica em faixas finas.
@@ -80,18 +75,61 @@ float frequencyShift(vec3 p, float r, vec3 rayDir) {
 // duas cópias do ruído, cada uma girando com Ω desde o próprio reinício a
 // cada FLOW_PERIOD, defasadas em meio período e misturadas por pesos que vão
 // a zero no reinício. A velocidade de cada faixa continua kepleriana.
-float diskGas(float r, float phi) {
-  float omega = sqrt(0.5 / (r * r * r));
+// Cada cópia é um campo de ruído fixo (depende só da semente do ciclo dela)
+// girado de Ω · idade: é isso que deixa o renderizador com cache guardar os
+// campos numa textura e só girar na pintura (paint.frag.glsl).
+float keplerOmega(float r) {
+  return sqrt(0.5 / (r * r * r));
+}
+
+// Idade (0 a 1 desde o reinício), peso e semente de cada cópia agora.
+struct GasCopies {
+  float age0, age1, w0, w1, seed0, seed1;
+};
+
+GasCopies gasCopies() {
   float cycle = uTime / FLOW_PERIOD;
-  float age0 = fract(cycle);
-  float age1 = fract(cycle + 0.5);
-  float w0 = 1.0 - abs(2.0 * age0 - 1.0);
-  float w1 = 1.0 - w0;
-  float n0 = diskNoise(r, phi - omega * age0 * FLOW_PERIOD, floor(cycle));
-  float n1 = diskNoise(r, phi - omega * age1 * FLOW_PERIOD, floor(cycle + 0.5) + 0.5);
-  // Mistura que mantém o contraste (a média de dois ruídos seria mais lisa).
-  float n = 0.5 + ((n0 - 0.5) * w0 + (n1 - 0.5) * w1) * inversesqrt(w0 * w0 + w1 * w1);
+  GasCopies c;
+  c.age0 = fract(cycle);
+  c.age1 = fract(cycle + 0.5);
+  c.w0 = 1.0 - abs(2.0 * c.age0 - 1.0);
+  c.w1 = 1.0 - c.w0;
+  c.seed0 = floor(cycle);
+  c.seed1 = floor(cycle + 0.5) + 0.5;
+  return c;
+}
+
+// Junta as duas cópias (n0, n1: o ruído de cada uma no ponto) numa
+// quantidade de gás de 0 a 1. A mistura mantém o contraste (a média de dois
+// ruídos seria mais lisa).
+float gasBlend(float n0, float n1, GasCopies c) {
+  float n = 0.5 + ((n0 - 0.5) * c.w0 + (n1 - 0.5) * c.w1) * inversesqrt(c.w0 * c.w0 + c.w1 * c.w1);
   return smoothstep(0.3, 0.7, n);
+}
+
+// Quanto gás há agora no ponto do disco a r do centro e no ângulo phi
+// (atan(z, x)), de 0 a 1, com o ruído calculado no ponto exato.
+float diskGas(float r, float phi) {
+  GasCopies c = gasCopies();
+  float omega = keplerOmega(r);
+  float n0 = diskNoise(r, phi - omega * c.age0 * FLOW_PERIOD, c.seed0);
+  float n1 = diskNoise(r, phi - omega * c.age1 * FLOW_PERIOD, c.seed1);
+  return gasBlend(n0, n1, c);
+}
+
+// Grade polar dos campos de ruído no renderizador com cache: a coordenada u
+// (0 a 1) anda em sqrt(r) entre uDiskIn e uDiskOut. Com isso as amostras
+// ficam mais juntas na borda interna, onde o cisalhamento kepleriano deixa o
+// ruído mais fino na direção radial, e mais espaçadas na externa.
+float gasU(float r) {
+  float a = sqrt(uDiskIn);
+  return (sqrt(r) - a) / (sqrt(uDiskOut) - a);
+}
+
+float gasRadius(float u) {
+  float a = sqrt(uDiskIn);
+  float s = a + u * (sqrt(uDiskOut) - a);
+  return s * s;
 }
 
 // Opacidade do disco a r do centro: cai suavemente nas bordas interna e

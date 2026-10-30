@@ -25,6 +25,7 @@ import {
   useAnimatedUniforms,
   type BlackHoleUniforms,
 } from './blackHoleUniforms.ts'
+import { createGasFields, type GasFields } from './gasFields.ts'
 import { readTexel } from './gpuReadback.ts'
 import { createBlackHoleMaterial, paintShader, traceShader } from './shaderSource.ts'
 import { attachShadowMeasure } from './shadowMeasure.ts'
@@ -104,6 +105,7 @@ export function BlackHoleCached() {
   const gl = useThree((s) => s.gl)
   const paint = useRef<Mesh>(null)
   const trace = useRef<TracePass | null>(null)
+  const gas = useRef<GasFields | null>(null)
   const traced = useRef<Traced | null>(null)
   const size = useMemo(() => new Vector2(), [])
   const uniforms = useMemo(() => createBlackHoleUniforms(), [])
@@ -113,6 +115,8 @@ export function BlackHoleCached() {
   useEffect(() => {
     const pass = createTracePass(uniforms)
     trace.current = pass
+    const fields = createGasFields(uniforms)
+    gas.current = fields
     traced.current = null
     bindCache(uniforms, pass.target)
 
@@ -143,8 +147,10 @@ export function BlackHoleCached() {
 
     return () => {
       pass.dispose()
+      fields.dispose()
       material.dispose()
       trace.current = null
+      gas.current = null
       bindCache(uniforms, null)
       if (mesh) mesh.onBeforeRender = () => {}
       detach?.()
@@ -154,9 +160,11 @@ export function BlackHoleCached() {
     }
   }, [gl, uniforms, material])
 
-  // Prioridade 0: depois do OrbitControls (-1), que move a câmera, e antes da
-  // sonda (0,5) e do pós-processamento (1), que desenha a tela.
+  // Prioridade 0: depois do OrbitControls (-1), que move a câmera, e do
+  // avanço do tempo (registrado antes), e antes da sonda (0,5) e do
+  // pós-processamento (1), que desenha a tela.
   useFrame(({ camera }) => {
+    gas.current?.update(gl, camera)
     const pass = trace.current
     if (!pass || !(camera instanceof PerspectiveCamera)) return
     gl.getDrawingBufferSize(size)

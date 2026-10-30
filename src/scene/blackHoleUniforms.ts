@@ -50,6 +50,9 @@ export function createBlackHoleUniforms() {
     uCacheFirst: { value: null as Texture | null },
     uCacheSecond: { value: null as Texture | null },
     uCacheScale: { value: new Vector2(1, 1) },
+    uGas0: { value: null as Texture | null },
+    uGas1: { value: null as Texture | null },
+    uGasSeed: { value: 0 },
   }
 }
 

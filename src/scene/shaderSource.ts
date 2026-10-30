@@ -7,6 +7,7 @@ import { shaderDefines } from '../physics/constants.ts'
 import common from '../shaders/common.glsl?raw'
 import disk from '../shaders/disk.glsl?raw'
 import vertex from '../shaders/fullscreen.vert.glsl?raw'
+import gasMain from '../shaders/gas.frag.glsl?raw'
 import legacyMain from '../shaders/legacy.frag.glsl?raw'
 import paintMain from '../shaders/paint.frag.glsl?raw'
 import raytrace from '../shaders/raytrace.glsl?raw'
@@ -24,6 +25,9 @@ export const traceShader = [common, raytrace, sky, disk, traceMain].join('\n')
 
 /** Renderizador com cache, pintura: a cada quadro, a partir da cache. */
 export const paintShader = [common, disk, paintMain].join('\n')
+
+/** Renderizador com cache, campo de ruído de uma cópia do gás: só quando ela vai reiniciar. */
+export const gasShader = [common, disk, gasMain].join('\n')
 
 /**
  * Material de quad de tela cheia com um dos shaders acima. Feito aqui, e não

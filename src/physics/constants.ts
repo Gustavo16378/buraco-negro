@@ -44,6 +44,13 @@ export const T_PROFILE_PEAK = 0.487871
 /** Tempo da simulação por segundo de tela, em r_s / c (antes do controle de velocidade). */
 export const TIME_SCALE = 4
 
+/**
+ * Período (em r_s / c) em que cada uma das duas cópias do ruído do gás é
+ * reiniciada (veja diskGas em disk.glsl). O renderizador com cache usa para
+ * saber quando preparar o campo de ruído da próxima cópia.
+ */
+export const FLOW_PERIOD = 40
+
 /** Período orbital do gás na ISCO (r = 3), visto de longe, em r_s / c: 2π / sqrt(0,5 / 27). */
 export const ISCO_PERIOD = (2 * Math.PI) / Math.sqrt(0.5 / 27)
 
@@ -79,4 +86,5 @@ export const shaderDefines = {
   DISK_FADE_IN: glslFloat(DISK_FADE_IN),
   DISK_FADE_OUT: glslFloat(DISK_FADE_OUT),
   T_PROFILE_PEAK: glslFloat(T_PROFILE_PEAK),
+  FLOW_PERIOD: glslFloat(FLOW_PERIOD),
 }
